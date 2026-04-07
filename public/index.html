@@ -499,7 +499,33 @@
 </div>
 
 <script src="sprites.js"></script>
+<script src="sprite-loader.js"></script>
 <script src="engine.js"></script>
+<script>
+// ========== Sprite Sheet 系统初始化 ==========
+// 保存原始 Sprites 引用，初始化 SpriteLoader 桥接层
+// 图集加载完成前自动 fallback 到 Canvas 绘制，零感知切换
+const _OriginalSprites = window.Sprites;
+const SpritesBridge = SpriteLoader.init(_OriginalSprites);
+
+// 覆盖全局 Sprites 对象 —— index.html 中所有 Sprites.xxx 调用自动走桥接层
+window.Sprites = {
+  drawMouseByRealm: (...args) => SpritesBridge.drawMouseByRealm(...args),
+  drawMonsterByName: (...args) => SpritesBridge.drawMonsterByName(...args),
+  drawMonsterHPBar: (...args) => SpritesBridge.drawMonsterHPBar(...args),
+  drawActiveBeast: (...args) => SpritesBridge.drawActiveBeast(...args),
+  drawMountCrane: (...args) => SpritesBridge.drawMountCrane(...args),
+  drawMountQilin: (...args) => SpritesBridge.drawMountQilin(...args),
+  drawWeaponWithSkin: (...args) => SpritesBridge.drawWeaponWithSkin(...args),
+  drawArmorSkinOverlay: (...args) => SpritesBridge.drawArmorSkinOverlay(...args),
+  armorSkinColors: _OriginalSprites.armorSkinColors,
+  rect: _OriginalSprites.rect,
+  px: _OriginalSprites.px,
+  circle: _OriginalSprites.circle,
+  ellipse: _OriginalSprites.ellipse,
+  roundRect: _OriginalSprites.roundRect,
+};
+</script>
 <script>
 // ========== 标签页 ==========
 document.querySelectorAll('.tab-btn').forEach(btn => {
