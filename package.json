@@ -1,0 +1,24 @@
+{
+  "name": "mouse-cultivation-2",
+  "version": "1.0.0",
+  "description": "像素风挂机修仙小游戏，基于 [鼠鼠修仙 v2.6](https://grrreymane.github.io/feifan-daily/game/) 的全新美术架构重制版。",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Grrreymane/mouse-cultivation-2.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Grrreymane/mouse-cultivation-2/issues"
+  },
+  "homepage": "https://github.com/Grrreymane/mouse-cultivation-2#readme",
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
