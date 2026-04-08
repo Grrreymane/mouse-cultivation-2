@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>迭代记录 - 鼠鼠修仙</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --bg-card: #12121a;
+      --bg-card-hover: #1a1a28;
+      --border: #1e1e2e;
+      --text: #e0e0e0;
+      --text-dim: #888;
+      --text-bright: #f5f5f5;
+      --accent: #7c6aef;
+      --accent-dim: #5a4db8;
+      --accent-glow: rgba(124, 106, 239, 0.15);
+      --tag-bg: #1a1a2e;
+      --tag-text: #a899f0;
+      --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+      --radius: 12px;
+      --radius-sm: 8px;
+      /* 品质色 */
+      --q-white: #aaa;
+      --q-green: #4ade80;
+      --q-blue: #60a5fa;
+      --q-purple: #c084fc;
+      --q-orange: #fb923c;
+      --q-red: #f87171;
+      --q-gold: #fbbf24;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; scroll-behavior: smooth; -webkit-font-smoothing: antialiased; }
+    body { font-family: var(--font-body); background: var(--bg); color: var(--text); line-height: 1.7; min-height: 100vh; }
+
+    /* Header */
+    .site-header { border-bottom: 1px solid var(--border); padding: 1.5rem; text-align: center; position: relative; }
+    .site-header::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); }
+    .site-title { font-size: 1.4rem; font-weight: 700; color: var(--text-bright); }
+    .site-title a { color: inherit; text-decoration: none; }
+    .site-title .pixel { color: var(--accent); }
+    .site-subtitle { font-size: 0.8rem; color: var(--text-dim); margin-top: 0.2rem; }
+    .site-nav { margin-top: 0.8rem; display: flex; gap: 1.2rem; justify-content: center; flex-wrap: wrap; }
+    .site-nav a { color: var(--text-dim); text-decoration: none; font-size: 0.82rem; font-weight: 500; padding: 0.3rem 0; border-bottom: 2px solid transparent; transition: all 0.2s; }
+    .site-nav a:hover, .site-nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* Container */
+    .container { max-width: 800px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+    /* Page header */
+    .page-header { margin-bottom: 2rem; text-align: center; }
+    .page-header h1 { font-size: 1.8rem; color: var(--text-bright); margin-bottom: 0.3rem; }
+    .page-header p { font-size: 0.88rem; color: var(--text-dim); }
+    .page-header .stats { display: flex; gap: 1.5rem; justify-content: center; margin-top: 1rem; flex-wrap: wrap; }
+    .page-header .stat { display: flex; flex-direction: column; align-items: center; }
+    .page-header .stat-value { font-size: 1.4rem; font-weight: 700; color: var(--accent); font-family: var(--font-mono); }
+    .page-header .stat-label { font-size: 0.72rem; color: var(--text-dim); }
+
+    /* Timeline */
+    .timeline { position: relative; padding-left: 2rem; }
+    .timeline::before { content: ''; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: linear-gradient(180deg, var(--accent), var(--accent-dim), var(--border)); }
+
+    /* Version card */
+    .version-card { position: relative; margin-bottom: 1.5rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; transition: all 0.2s; }
+    .version-card:hover { border-color: var(--accent-dim); box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+    .version-card::before { content: ''; position: absolute; left: -1.62rem; top: 1.3rem; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); z-index: 1; }
+    .version-card.major::before { background: var(--q-gold); box-shadow: 0 0 8px rgba(251,191,36,0.5); }
+    .version-card.minor::before { background: var(--q-green); }
+    .version-card.patch::before { background: var(--q-blue); }
+
+    .version-header { padding: 1rem 1.2rem; cursor: pointer; display: flex; align-items: center; gap: 0.8rem; user-select: none; }
+    .version-header:hover { background: var(--bg-card-hover); }
+    .version-badge { font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; padding: 0.2rem 0.6rem; border-radius: 6px; flex-shrink: 0; }
+    .version-badge.major { background: rgba(251,191,36,0.15); color: var(--q-gold); }
+    .version-badge.minor { background: rgba(74,222,128,0.15); color: var(--q-green); }
+    .version-badge.patch { background: rgba(96,165,250,0.15); color: var(--q-blue); }
+    .version-badge.hotfix { background: rgba(248,113,113,0.15); color: var(--q-red); }
+    .version-title { font-size: 1rem; font-weight: 600; color: var(--text-bright); flex: 1; }
+    .version-date { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-dim); flex-shrink: 0; }
+    .version-toggle { font-size: 0.8rem; color: var(--text-dim); transition: transform 0.2s; flex-shrink: 0; }
+    .version-card.open .version-toggle { transform: rotate(180deg); }
+
+    .version-body { padding: 0 1.2rem 1.2rem; display: none; }
+    .version-card.open .version-body { display: block; }
+    .version-body .desc { font-size: 0.88rem; color: var(--text-dim); margin-bottom: 1rem; padding-bottom: 0.8rem; border-bottom: 1px solid var(--border); font-style: italic; }
+
+    /* Feature group */
+    .feature-group { margin-bottom: 1rem; }
+    .feature-group-title { font-size: 0.85rem; font-weight: 600; color: var(--accent); margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.4rem; }
+    .feature-list { list-style: none; padding-left: 0; }
+    .feature-list li { font-size: 0.84rem; color: var(--text); margin-bottom: 0.3rem; padding-left: 1.2rem; position: relative; line-height: 1.6; }
+    .feature-list li::before { content: '▸'; position: absolute; left: 0; color: var(--text-dim); }
+    .feature-list li strong { color: var(--text-bright); }
+    .feature-list li code { font-family: var(--font-mono); font-size: 0.78em; background: var(--tag-bg); padding: 0.1em 0.35em; border-radius: 3px; color: var(--tag-text); }
+
+    /* Code size badge */
+    .code-size { display: inline-block; font-family: var(--font-mono); font-size: 0.72rem; background: var(--tag-bg); color: var(--tag-text); padding: 0.15rem 0.5rem; border-radius: 4px; margin-left: 0.5rem; }
+
+    /* Footer */
+    .site-footer { border-top: 1px solid var(--border); padding: 1.5rem; text-align: center; font-size: 0.8rem; color: var(--text-dim); }
+
+    /* Tags */
+    .tag { font-size: 0.68rem; padding: 0.1rem 0.45rem; border-radius: 99px; font-weight: 500; display: inline-block; margin-left: 0.3rem; }
+    .tag-new { background: rgba(74,222,128,0.15); color: var(--q-green); }
+    .tag-fix { background: rgba(96,165,250,0.15); color: var(--q-blue); }
+    .tag-refactor { background: rgba(192,132,252,0.15); color: var(--q-purple); }
+    .tag-visual { background: rgba(251,191,36,0.15); color: var(--q-gold); }
+    .tag-balance { background: rgba(248,113,113,0.15); color: var(--q-red); }
+
+    @media (max-width: 600px) {
+      .container { padding: 1.5rem 1rem; }
+      .page-header h1 { font-size: 1.4rem; }
+      .timeline { padding-left: 1.5rem; }
+      .version-card::before { left: -1.12rem; width: 10px; height: 10px; }
+      .timeline::before { left: 6px; }
+      .version-header { flex-wrap: wrap; gap: 0.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <div class="site-title"><a href="/feifan-daily/">非凡<span class="pixel">像素</span></a></div>
+    <div class="site-subtitle">科技 · 游戏 · 美术 · 世界在变，人更需要思考</div>
+    <nav class="site-nav">
+      <a href="./">🐭 鼠鼠修仙2</a>
+      <a href="changelog.html" class="active">📋 迭代记录</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    <div class="page-header">
+      <h1>🐭 鼠鼠修仙 · 迭代记录</h1>
+      <p>每一个版本都是一次飞升 ✨</p>
+      <div class="stats">
+        <div class="stat"><span class="stat-value">v2.6</span><span class="stat-label">当前版本</span></div>
+        <div class="stat"><span class="stat-value">28</span><span class="stat-label">版本迭代</span></div>
+        <div class="stat"><span class="stat-value">~6000+</span><span class="stat-label">总代码行数</span></div>
+        <div class="stat"><span class="stat-value">3天</span><span class="stat-label">开发周期</span></div>
+      </div>
+    </div>
+
+    <div class="timeline" id="timeline">
+
+      <!-- v2.6 -->
+      <div class="version-card minor open">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v2.6</span>
+          <span class="version-title">怪物·灵兽·坐骑像素画全面重制</span>
+          <span class="version-date">2026-04-08</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">基于 mouse_beasts_01 参考风格，28种生物像素画全面升级——描边轮廓、多层色阶、动态特效、精致纹理。</div>
+          <div class="feature-group">
+            <div class="feature-group-title">👹 怪物重制 (18种) <span class="tag tag-visual">美术</span></div>
+            <ul class="feature-list">
+              <li><strong>Tier 1-3 怪物</strong>：灰毛妖鼠、毒蟾蜍、赤狐妖、影蝠群、铁甲傀儡、墨蛟蛇等增加黑色描边轮廓</li>
+              <li><strong>Tier 4-5 怪物</strong>：化龙妖蛟、劫雷真龙、天魔老祖等增加3-5层色阶渐变</li>
+              <li><strong>Boss (8种)</strong>：全部增加动态粒子特效（火焰/闪电/暗能量/冰霜等）</li>
+              <li>所有怪物增加纹理细节：鳞片、毛皮、骨刺、裂纹等</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐾 灵兽重制 (8种) <span class="tag tag-visual">美术</span></div>
+            <ul class="feature-list">
+              <li><strong>赤炎灵猫</strong>：火焰毛皮纹理 + 尾部火焰粒子</li>
+              <li><strong>玄冰狼</strong>：冰晶鬃毛 + 冰霜吐息特效</li>
+              <li><strong>雷鸣鹰</strong>：闪电羽翼 + 电弧环绕</li>
+              <li><strong>暗鳞蛇</strong>：暗紫鳞片纹理 + 毒雾粒子</li>
+              <li><strong>蛟龙/金龙</strong>：龙鳞细节 + 祥云/龙珠特效</li>
+              <li><strong>天凤</strong>：五彩羽翼渐变 + 凤羽飘落粒子</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐎 坐骑重制 (2种) <span class="tag tag-visual">美术</span></div>
+            <ul class="feature-list">
+              <li><strong>仙鹤</strong>：增加羽毛纹理、翼尖渐变、仙气飘带</li>
+              <li><strong>麒麟</strong>：增加龙须金鳞、火焰蹄印、鹿角细节</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">📊 代码规模 <span class="tag tag-refactor">重构</span></div>
+            <ul class="feature-list">
+              <li>sprites.js 从 1485行 增至 2030行（+37%）</li>
+              <li>统一描边(outline)系统 + 多层色阶渐变架构</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v2.5 -->
+      <div class="version-card minor open">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v2.5</span>
+          <span class="version-title">抽卡外观配图</span>
+          <span class="version-date">2026-04-07</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">天机阁抽卡系统全面配图升级，外观收藏、抽卡结果、已装备外观三处均新增像素画预览。</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🎰 外观配图 <span class="tag tag-feature">新功能</span></div>
+            <ul class="feature-list">
+              <li>外观收藏列表：每个已获得外观新增40×40像素Canvas配图</li>
+              <li>武器皮肤绘制实际武器像素画，衣服皮肤绘制穿着该皮肤的鼠鼠</li>
+              <li>抽卡结果：每个外观抽卡结果新增36×36缩略预览图</li>
+              <li>已装备外观展示区新增预览配图</li>
+              <li>配图根据玩家当前境界自适应（不同境界衣服形状不同）</li>
+              <li>未获得外观显示「?」占位符</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v2.4 -->
+      <div class="version-card minor open">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v2.4</span>
+          <span class="version-title">怪物图鉴配图</span>
+          <span class="version-date">2026-04-07</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">为怪物图鉴每个已发现怪物添加像素画缩略图，让图鉴更直观更有收藏感。</div>
+          <div class="feature-group">
+            <div class="feature-group-title">📖 图鉴配图 <span class="tag tag-feature">新功能</span></div>
+            <ul class="feature-list">
+              <li>每个已发现怪物卡片左侧新增48×48像素Canvas配图</li>
+              <li>使用Sprites.drawMonsterByName绘制怪物缩略像素画</li>
+              <li>根据怪物tier自动调整缩放（低级/中级/高级）</li>
+              <li>未发现怪物显示「?」占位符</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v2.3 -->
+      <div class="version-card minor open">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v2.3</span>
+          <span class="version-title">灵宠龙方向修复 + 衣服适配v4.0体型</span>
+          <span class="version-date">2026-04-07</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">修复灵宠蛟龙/金龙面朝错误方向的问题，同时将所有6个境界的衣服重绘适配v4.0鼠鼠紧凑体型。</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐉 灵宠龙方向修复 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li><strong>蛟龙/金龙</strong>：添加scale(-1,1)抵消外层灵兽翻转</li>
+              <li>龙头现在正确面向怪物方向（右方）</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">👘 衣服重绘 <span class="tag tag-improve">美术</span></div>
+            <ul class="feature-list">
+              <li>6个境界衣服全部缩小适配v4.0紧凑体型</li>
+              <li>布衣/道袍/法袍/华服/仙袍/天衣宽度各减2-4px</li>
+              <li>天冠/肩甲/飘带/V领/腰带同步调整位置</li>
+              <li>衣服皮肤覆盖层(drawArmorSkinOverlay)同步缩小</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v2.2 -->
+      <div class="version-card minor open">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v2.2</span>
+          <span class="version-title">鼠鼠形状向参考图靠拢 + 龙系怪物方向修复</span>
+          <span class="version-date">2026-04-07</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">鼠鼠形状全面重制为参考像素鼠风格——大圆耳、紧凑圆脸、Q版短腿。同时修复龙系怪物面朝错误方向的问题。</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐭 鼠鼠形状重制 v4.0 <span class="tag tag-improve">美术</span></div>
+            <ul class="feature-list">
+              <li><strong>大圆耳朵</strong>：像素鼠标志性圆形耳，4层轮廓+内粉+高光</li>
+              <li><strong>头部紧凑</strong>：从13px宽缩到11px，更圆润的头身比</li>
+              <li><strong>五官简化</strong>：小圆点鼻+简洁微笑嘴，更Q版</li>
+              <li><strong>Q版短腿</strong>：腿脚更短粗可爱</li>
+              <li><strong>尾巴简化</strong>：更自然的长度和弧度</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐉 龙系怪物方向修复 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li><strong>墨蛟蛇/化龙妖蛟/劫雷真龙</strong>：添加水平翻转，龙头现在面向玩家</li>
+              <li>修复v2.1中华龙重制后头部朝向右方（背对玩家）的问题</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v2.1 -->
+      <div class="version-card minor open">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v2.1</span>
+          <span class="version-title">鼠鼠精细化 + 中华龙形象重制</span>
+          <span class="version-date">2026-04-07</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">全面提升鼠鼠角色像素精度，龙系生物全部重制为中华龙风格——蛇形龙身、鹿角、龙须、无翅膀</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐭 鼠鼠精细化 <span class="tag tag-improve">美术</span></div>
+            <ul class="feature-list">
+              <li><strong>耳朵</strong>：更大更圆润，3层结构（外壳+内粉+高光点）</li>
+              <li><strong>头部</strong>：额头毛发渐变、头顶高光、多层毛色过渡</li>
+              <li><strong>眼睛</strong>：3×4像素大眼（眼框+瞳孔+双高光+眼底反光）</li>
+              <li><strong>表情</strong>：新增眉毛、三角形鼻子、微笑弧线嘴巴</li>
+              <li><strong>胡须</strong>：6根长短交错（左右各3根）</li>
+              <li><strong>腿脚</strong>：大腿外侧+脚趾细节</li>
+              <li><strong>尾巴</strong>：更长更卷，带高光层</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐉 中华龙形象重制 <span class="tag tag-new">重制</span></div>
+            <ul class="feature-list">
+              <li><strong>蛟龙灵宠</strong>：蛇形S身+鹿角+龙须飘动+云纹祥瑞</li>
+              <li><strong>金龙灵宠</strong>：金鳞蛇身+双叉鹿角+五爪+龙珠火球</li>
+              <li><strong>劫雷真龙</strong>（怪物）：雷蓝蛇形龙身+电角+电弧龙须+闪电鳞纹</li>
+              <li><strong>化龙妖蛟</strong>（怪物）：绿色半龙半蛇+初生短角+化龙灵气</li>
+              <li><strong>墨蛟蛇</strong>（怪物）：暗色蛇身+角质突起+分叉信子</li>
+              <li><strong>龙纹剑皮肤</strong>：增加龙首护手+龙鳞纹理</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v2.0.1 -->
+      <div class="version-card patch open">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge patch">v2.0.1</span>
+          <span class="version-title">修复光环方块 + 美术调整指南</span>
+          <span class="version-date">2026-04-06</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">修复方块像素风重制后境界光环变成放大缩小方块的问题，并添加美术风格调整指南方便后续迭代</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐛 修复 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li><strong>境界光环</strong>：从方块rect改回椭圆ellipse，去掉不断放大缩小的方块</li>
+              <li>光晕透明度和脉冲幅度降低（0.5→0.4, 0.15→0.1），更柔和自然</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">📐 架构优化 <span class="tag tag-improve">优化</span></div>
+            <ul class="feature-list">
+              <li><strong>美术风格调整指南</strong>：文件顶部新增详细注释，标注9大可调整区域的对应函数/对象</li>
+              <li>未来美术迭代时可快速定位修改目标，降低维护成本</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v2.0 -->
+      <div class="version-card major open">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge major">v2.0</span>
+          <span class="version-title">方块像素风美术全面重制</span>
+          <span class="version-date">2026-04-06</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">sprites.js 全面重写，从圆润像素风改回经典方块像素风格，用更多像素组成更精细的角色画面</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🎨 美术风格重制 <span class="tag tag-new">全新</span></div>
+            <ul class="feature-list">
+              <li><strong>6境界鼠鼠角色</strong>：全部改用方块(px/rect)绘制，告别圆润风格</li>
+              <li><strong>18种怪物</strong>：灰毛妖鼠、毒蟾蜍、赤狐妖、铁甲傀儡等全部方块像素画</li>
+              <li><strong>6种出战灵兽</strong>：赤炎灵猫、玄冰狼、雷鸣鹰等方块重制</li>
+              <li><strong>3种装饰灵宠</strong>：小蛇/蛟龙/金龙方块版</li>
+              <li><strong>2种坐骑</strong>：仙鹤/麒麟方块像素重绘</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">⚡ 代码优化 <span class="tag tag-improve">优化</span></div>
+            <ul class="feature-list">
+              <li>sprites.js 从 2495行/92KB 精简至 1287行/60KB</li>
+              <li>绘制代码量减少约50%，方块风格更易维护</li>
+              <li>保留 circle/ellipse 仅用于光效和特效</li>
+              <li>武器皮肤/盔甲皮肤保持原有方块风格不变</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v1.5.3 -->
+      <div class="version-card patch">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge patch">v1.5.3</span>
+          <span class="version-title">角色站在坐骑背上</span>
+          <span class="version-date">2026-04-06</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">调整坐骑位置到角色脚底，实现真正的骑乘视觉效果</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐴 骑乘效果优化 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li><strong>角色站在坐骑上</strong>：坐骑下移至角色脚底位置，鼠鼠视觉上骑在坐骑背上</li>
+              <li>仙鹤坐骑偏移+18px，麒麟坐骑偏移+20px（根据体型差异）</li>
+              <li>绘制顺序：坐骑(底层) → 角色(上层)，角色始终不被遮挡</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v1.5.2 -->
+      <div class="version-card patch">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge patch">v1.5.2</span>
+          <span class="version-title">坐骑图层修复 + 血条位置进一步优化</span>
+          <span class="version-date">2026-04-06</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">坐骑不再遮挡角色，血条位置进一步上调</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🎨 坐骑图层修复 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li><strong>调整绘制顺序</strong>：阴影→坐骑(底层)→角色(上层)→灵兽→怪物</li>
+              <li>坐骑改为在角色<strong>之前</strong>绘制，确保角色始终在坐骑上层，不再被遮挡</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">💚 血条位置进一步上调 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li>基础偏移从-35加大到<strong>-45</strong>像素</li>
+              <li>各境界额外上移调整：炼气0/筑基0/金丹8/元婴18/化神28/大乘<strong>45</strong>像素</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v1.5.1 -->
+      <div class="version-card patch">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge patch">v1.5.1</span>
+          <span class="version-title">坐骑跟随角色运动 + 血条位置优化</span>
+          <span class="version-date">2026-04-06</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">坐骑跟随角色全部动画，朝向修正为向右，血条不再覆盖角色</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐎 坐骑动画同步 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li><strong>跟随角色内部运动</strong>：坐骑现在同步角色的浮空(float)和攻击冲刺(atkX)动画</li>
+              <li>每个境界有独立的浮空幅度和攻击位移，坐骑完全匹配</li>
+              <li>大乘期角色大幅浮空时，坐骑也跟着飘起来</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">➡️ 坐骑朝右 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li><strong>水平翻转</strong>：仙鹤和麒麟通过<code>ctx.scale(-1, 1)</code>翻转为面向怪物方向</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">💚 血条位置优化 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li><strong>动态高度调整</strong>：血条根据境界自动调整高度，不再覆盖大乘期角色</li>
+              <li>血条跟随呼吸动画和角色浮空偏移，与角色保持一致距离</li>
+              <li>各境界额外上移量：炼气0/筑基0/金丹5/元婴12/化神20/大乘32像素</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v1.5 -->
+      <div class="version-card minor">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v1.5</span>
+          <span class="version-title">丹药Buff叠加 + 坐骑回归 + 灵宠朝右</span>
+          <span class="version-date">2026-04-06</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">丹药效果可叠加时间，坐骑重新渲染到战斗画面，灵宠方向修正</div>
+          <div class="feature-group">
+            <div class="feature-group-title">💊 丹药Buff叠加 <span class="tag tag-balance">平衡</span></div>
+            <ul class="feature-list">
+              <li><strong>效果时间可叠加</strong>：吃2个黄龙丹直接获得60秒经验翻倍，不再覆盖</li>
+              <li>所有有时间的丹药都支持叠加：黄龙丹(经验)/筑元丹(攻击)/清心丹(暴击)/金元丹(渡劫)</li>
+              <li>使用日志显示剩余总时间，方便控制用量</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐎 坐骑回归 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li><strong>修复坐骑消失</strong>：金丹期+仙鹤、化神期+麒麟重新在Canvas中渲染</li>
+              <li>坐骑渲染在鼠鼠下方，跟随呼吸浮动动画</li>
+              <li>sprites.js导出<code>drawMountCrane</code>和<code>drawMountQilin</code>接口</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐾 灵宠方向修正 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li><strong>灵宠改为朝右</strong>：出战灵兽通过Canvas水平翻转<code>scale(-1,1)</code>面向怪物方向</li>
+              <li>攻击冲刺动画方向同步修正</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v1.4 -->
+      <div class="version-card patch">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge patch">v1.4</span>
+          <span class="version-title">圆润像素风重绘 + 转生Bug修复</span>
+          <span class="version-date">2026-04-06</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">精灵系统全面圆润化重绘，修复转生重置抽卡数据的严重Bug</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🎨 圆润像素风重绘 <span class="tag tag-visual">视觉</span></div>
+            <ul class="feature-list">
+              <li>引入圆润绘制系统：<code>circle()</code>、<code>ellipse()</code>、<code>roundRect()</code>、<code>bezierCurveTo()</code></li>
+              <li>6种境界鼠鼠全部改为<strong>圆头、圆耳、椭圆身体</strong>，增加腮红、弧线微笑、胡须</li>
+              <li>18种怪物全部圆润化（蟾蜍凸起眼球、狐妖蓬松尾巴、蛟龙串珠身体等）</li>
+              <li>6种灵兽增加细节（凤凰贝塞尔曲线翅膀、火灵猫毛发纹理等）</li>
+              <li>sprites.js 从2098行增加到2493行（+19%圆润绘制代码）</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐛 Bug修复 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li><strong>修复转生飞升重置抽卡数据</strong>：天机令、外观收藏、签到数据现在飞升后完整保留</li>
+              <li>preserved对象补充：tianjiTokens / ownedSkins / equippedWeaponSkin / equippedArmorSkin / totalGachaPulls / 签到数据</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v1.3 -->
+      <div class="version-card patch">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge patch">v1.3</span>
+          <span class="version-title">蓝紫霓虹像素风 + 动态Favicon</span>
+          <span class="version-date">2026-04-06</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">全面蓝紫霓虹配色改造，鼠鼠形象焕新</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🎨 美术风格改造 <span class="tag tag-visual">视觉</span></div>
+            <ul class="feature-list">
+              <li>鼠鼠毛色改为淡蓝灰<code>#9BB0D4</code>，标题颜色改为霓虹蓝<code>#66ccff</code></li>
+              <li>6种境界的霓虹光环效果</li>
+              <li>新增Canvas动态生成Favicon</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v1.2 -->
+      <div class="version-card major">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge major">v1.2</span>
+          <span class="version-title">凡人修仙传世界观改造 + 视觉Bug修复</span>
+          <span class="version-date">2026-04-06</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">参考《凡人修仙传》世界观体系，全面改造所有游戏内文本；修复灵宠双重显示和皮肤浮空问题</div>
+          <div class="feature-group">
+            <div class="feature-group-title">📖 世界观改造 <span class="tag tag-new">新增</span></div>
+            <ul class="feature-list">
+              <li><strong>18种怪物</strong>重命名（灵鼠→灰毛妖鼠、毒蛙→毒蟾蜍、天魔→天魔老祖等）</li>
+              <li><strong>10种功法</strong>重命名（基础剑诀→长春功、金丹大法→三转重元功等）</li>
+              <li><strong>6种灵兽</strong>重命名（火灵猫→赤炎灵猫、凤凰→天凤等）</li>
+              <li><strong>5个秘境</strong>重命名（灵草谷→黄枫谷药园、天机阁→虚天殿遗迹等）</li>
+              <li><strong>6种丹药</strong>重命名（聚灵丹→黄龙丹等）</li>
+              <li><strong>12种天赋</strong>重命名（狂战之魂→修罗血脉等）</li>
+              <li>洞府/成就/悬赏/奇遇/签到全部同步重命名</li>
+              <li>镇妖塔→<strong>锁妖塔</strong>，灵草→<strong>灵药</strong></li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐛 视觉Bug修复 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li><strong>灵宠双重显示</strong>：出战灵兽时跳过装饰性灵宠绘制</li>
+              <li><strong>武器皮肤内嵌</strong>：不再浮空叠加，在各realm函数内部替换默认武器</li>
+              <li><strong>衣服皮肤内嵌</strong>：使用skinColors三色系统替换默认颜色</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">📊 代码规模</div>
+            <ul class="feature-list">
+              <li>engine.js ~2441行 + index.html ~2197行 + sprites.js ~2074行 = <strong>~6712行</strong></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v1.1 -->
+      <div class="version-card minor">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v1.1</span>
+          <span class="version-title">抽卡扩充 + 坐骑属性 + 灵兽喂满</span>
+          <span class="version-date">2026-04-06</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">参考原神混合池设计扩充抽卡系统，坐骑提供属性加成，灵兽支持一键喂满</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🎰 抽卡池扩充 <span class="tag tag-new">新增</span></div>
+            <ul class="feature-list">
+              <li>40%概率掉落装备 + 60%概率掉外观（参考原神混合池）</li>
+              <li>装备品质映射抽卡品质，背包满时自动卖出获灵石</li>
+              <li>代币还原：升仙令→天机令，单抽10/十连90</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐎 坐骑属性系统 <span class="tag tag-new">新增</span></div>
+            <ul class="feature-list">
+              <li>仙鹤：闪避+5%、攻速+5%</li>
+              <li>麒麟：攻击+15%、暴伤+20%、闪避+3%</li>
+              <li>坐骑精灵重绘（羽毛纹理/仙气光晕/火焰粒子等）</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐾 便捷功能 <span class="tag tag-new">新增</span></div>
+            <ul class="feature-list">
+              <li>灵兽一键喂满：<code>maxFeedBeast()</code> 一键消耗灵石喂到极限</li>
+              <li>灵兽页顶部新增坐骑卡片展示及属性加成</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🧹 系统清理 <span class="tag tag-refactor">重构</span></div>
+            <ul class="feature-list">
+              <li>移除卖白装按钮（被"卖弱装"取代）、手动加点、sellAllWhite死代码</li>
+              <li>练功场→演武场，全属性+3%/级</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v1.0 -->
+      <div class="version-card major">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge major">v1.0</span>
+          <span class="version-title">系统重构 + 转生天赋</span>
+          <span class="version-date">2026-04-06</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">里程碑版本！12种前世天赋让每次转生体验完全不同，外观渲染系统上线</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🎭 前世天赋系统 <span class="tag tag-new">新增</span></div>
+            <ul class="feature-list">
+              <li>飞升时随机获得1个前世天赋（共12种），不与已有重复</li>
+              <li>🔥 修罗血脉：攻+40% 防-20%</li>
+              <li>🛡️ 金刚不坏：防+50% 命+20% 攻-15%</li>
+              <li>🗡️ 暗夜行者：暴率+15% 暴伤+50% 命-20%</li>
+              <li>📚 万卷鼠儒：经验+60% 灵石+30%</li>
+              <li>💰 坊市大亨：灵石+80% 装备掉率+5%</li>
+              <li>🐲 驭兽宗传人：灵兽攻击×2 捕获率×2</li>
+              <li>⚗️ 丹鼎宗师：丹药持续×2 炼丹省50%</li>
+              <li>🍀 气运之鼠：奇遇率×2 秘境+1次</li>
+              <li>🔥 天凤血脉：1秒瞬间复活 灵石不掉落</li>
+              <li>🩸 血道修士：天生15%吸血 不能自然回血</li>
+              <li>⚡ 雷遁真身：攻速+30% 闪避+10% 攻-10%</li>
+              <li>🏔️ 灵界巨鼠：生命×2 攻+20% 闪避=0</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">👁️ 外观渲染系统 <span class="tag tag-visual">视觉</span></div>
+            <ul class="feature-list">
+              <li>20种武器皮肤在Canvas中实际渲染（独立像素画+特效）</li>
+              <li>20种衣服皮肤颜色覆盖层上线</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">⚙️ 系统重构 <span class="tag tag-refactor">重构</span></div>
+            <ul class="feature-list">
+              <li>移除手动修炼点分配，升级自动强化全属性+随机额外强化</li>
+              <li>功法改用灵石升级</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v0.9 -->
+      <div class="version-card minor">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v0.9</span>
+          <span class="version-title">每日签到 + 悬赏任务</span>
+          <span class="version-date">2026-04-05</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">挂机游戏留存核心——每天都有理由登录</div>
+          <div class="feature-group">
+            <div class="feature-group-title">📅 每日签到 <span class="tag tag-new">新增</span></div>
+            <ul class="feature-list">
+              <li>7天循环奖励表（灵石→灵草→天机令→矿石→丹药→精华→大礼包）</li>
+              <li>连续签到机制，断签重置天数</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">📋 悬赏任务 <span class="tag tag-new">新增</span></div>
+            <ul class="feature-list">
+              <li>每日自动刷新3个随机悬赏（7种模板×多个难度梯度）</li>
+              <li>难度自适应：根据境界自动调整目标数量</li>
+              <li>实时进度追踪，完成后手动领取</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v0.8.1 -->
+      <div class="version-card patch">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge hotfix">v0.8.1</span>
+          <span class="version-title">装备快捷操作</span>
+          <span class="version-date">2026-04-05</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="feature-group">
+            <div class="feature-group-title">⚡ 快捷功能 <span class="tag tag-new">新增</span></div>
+            <ul class="feature-list">
+              <li><strong>一键换装</strong>：自动扫描背包穿最强装备（多轮扫描）</li>
+              <li><strong>一键卖弱装</strong>：出售分数≤身上同槽位的装备（空槽不卖）</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v0.8 -->
+      <div class="version-card major">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge major">v0.8</span>
+          <span class="version-title">天机阁抽卡系统</span>
+          <span class="version-date">2026-04-05</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">40款外观皮肤，6个品质等级，十连保底紫色</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🎰 抽卡系统 <span class="tag tag-new">新增</span></div>
+            <ul class="feature-list">
+              <li>天机令代币（精英怪/秘境/塔/飞升/奇遇获得）</li>
+              <li>单抽10令、十连90令(9折)，十连保底珍品(紫)以上</li>
+              <li>品质概率：凡30% → 良35% → 稀20% → 珍10% → 极4% → 传1%</li>
+              <li>40款外观（20武器+20衣服），6个品质等级</li>
+              <li>重复外观自动转天机令</li>
+              <li>20种武器独立像素画+特效渲染</li>
+              <li>抽卡Canvas粒子爆炸特效</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v0.7 -->
+      <div class="version-card minor">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v0.7</span>
+          <span class="version-title">战斗体验重塑 + 日夜循环</span>
+          <span class="version-date">2026-04-05</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">挂机游戏黄金法则——"每一秒都有东西可看"</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🌗 日夜循环 <span class="tag tag-visual">视觉</span></div>
+            <ul class="feature-list">
+              <li>天空随时间动态变化（日出/正午/日落/夜晚完整循环）</li>
+              <li>太阳弧形移动、月亮夜间出现、星星明暗变化</li>
+              <li>4朵飘动云彩、日出日落橙红渐变</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🌳 场景升级 <span class="tag tag-visual">视觉</span></div>
+            <ul class="feature-list">
+              <li>像素三角树 + 岩石 + 草地摆动动画</li>
+              <li>伤害数字弹跳物理（重力+反弹）</li>
+              <li>鼠鼠呼吸+闲置摆动动画</li>
+              <li>文字音效系统（叮!/嚓!/嘭!等战斗文字）</li>
+              <li>Canvas Mini-HUD（XP条+等级+灵石）</li>
+              <li>连杀特效大升级（里程碑大字+屏幕边缘发光）</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v0.6 -->
+      <div class="version-card minor">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v0.6</span>
+          <span class="version-title">视觉效果大升级</span>
+          <span class="version-date">2026-04-05</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">参考Vampire Survivors的战斗特效设计</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐾 灵兽攻击 <span class="tag tag-new">新增</span></div>
+            <ul class="feature-list">
+              <li>出战灵兽40%概率主动攻击（冲刺动画+能量弹道6种颜色）</li>
+              <li>独立伤害数字（粉紫色区分）</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">✨ 功法特效 + 环境粒子 <span class="tag tag-visual">视觉</span></div>
+            <ul class="feature-list">
+              <li>25%概率触发10种功法专属视觉特效</li>
+              <li>6种境界6套环境粒子（萤火虫/灵气/落叶/星光/火焰/暗能量）</li>
+              <li>精英怪死亡大爆炸+掉落物飞散</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v0.5 -->
+      <div class="version-card major">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge major">v0.5</span>
+          <span class="version-title">转生飞升系统 + 怪物图鉴</span>
+          <span class="version-date">2026-04-05</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">参考Clicker Heroes、Cookie Clicker的Prestige机制</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🌟 转生飞升 <span class="tag tag-new">新增</span></div>
+            <ul class="feature-list">
+              <li>大乘期(Lv.50+)可飞升转生，重置大部分进度，获得仙缘点</li>
+              <li>6种永久升级：攻击/防御/生命/经验/灵石/起始等级</li>
+              <li>保留灵兽/成就/图鉴/10%灵石</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">📖 怪物图鉴 + 🌄 境界场景 <span class="tag tag-new">新增</span></div>
+            <ul class="feature-list">
+              <li>18种怪物按境界分类展示，未发现显示???</li>
+              <li>6种境界6套背景配色+高境界浮空仙山</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v0.4 -->
+      <div class="version-card major">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge major">v0.4</span>
+          <span class="version-title">战斗系统大改 + 洞府 + 成就</span>
+          <span class="version-date">2026-04-04</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">血条重做、死亡惩罚、精英怪多管血条，挂机游戏的紧张感来了</div>
+          <div class="feature-group">
+            <div class="feature-group-title">⚔️ 战斗系统 <span class="tag tag-balance">平衡</span></div>
+            <ul class="feature-list">
+              <li><strong>鼠鼠可以死亡</strong>！死亡5秒复活，掉落10%灵石</li>
+              <li>三档战斗速度：1x / 2x / 4x</li>
+              <li>精英怪多管血条（2-4管），金色光环，掉落翻倍</li>
+              <li>自动吃药（可配置阈值20%~60%）</li>
+              <li>DoT系统（毒/灼烧持续伤害）</li>
+              <li>DPS实时统计（滑动窗口平均）</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🏠 洞府系统 <span class="tag tag-new">新增</span></div>
+            <ul class="feature-list">
+              <li>5个建筑：灵药圃/聚灵阵/炼丹室/灵矿脉/演武场（各Lv.0→5）</li>
+              <li>离线产出灵药和矿石</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🏆 成就系统 <span class="tag tag-new">新增</span></div>
+            <ul class="feature-list">
+              <li>18个成就，覆盖全游戏系统</li>
+              <li>每个成就提供永久属性加成</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v0.4.1 -->
+      <div class="version-card patch">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge hotfix">v0.4.1</span>
+          <span class="version-title">修复吸血怪bug + 灵兽视觉系统</span>
+          <span class="version-date">2026-04-04</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="feature-group">
+            <div class="feature-group-title">🐛 修复 + 🎨 视觉 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li><strong>修复吸血怪物无法击败</strong>的致命bug（HP≤0时仍触发吸血回复）</li>
+              <li>吸血回复量从15%降至8%</li>
+              <li>新增6种灵兽独立像素画：赤炎灵猫/玄冰狼/雷鸣鹰/暗鳞蛇/青鳞蛟龙/天凤</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v0.3 -->
+      <div class="version-card major">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge major">v0.3</span>
+          <span class="version-title">全系统大版本 · 8大系统上线</span>
+          <span class="version-date">2026-04-04</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">参考寻道大千、一念逍遥，全面升级可玩性</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🎮 八大游戏系统 <span class="tag tag-new">新增</span></div>
+            <ul class="feature-list">
+              <li><strong>⚔️ 装备系统</strong>：4槽位 × 6品质 × 随机词条 × 强化+15</li>
+              <li><strong>💊 丹药炼制</strong>：6种丹药，材料系统（灵药/矿石/精华）</li>
+              <li><strong>📜 功法技能树</strong>：10种功法，境界解锁</li>
+              <li><strong>🐾 灵兽养成</strong>：6种灵兽，战斗捕获 + 喂养升级</li>
+              <li><strong>🏔️ 秘境探索</strong>：5个秘境，每日3次</li>
+              <li><strong>🗼 锁妖塔</strong>：无尽逐层挑战</li>
+              <li><strong>⛈️ 渡劫机制</strong>：大境界突破，60%基础成功率</li>
+              <li><strong>🎲 奇遇事件</strong>：6种随机事件，30秒冷却</li>
+              <li>9种怪物特性（毒/荆棘/狂暴/闪避/灼烧/吸血等）</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v0.2 -->
+      <div class="version-card minor">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v0.2</span>
+          <span class="version-title">像素精灵系统 + 全前端化</span>
+          <span class="version-date">2026-04-04</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="feature-group">
+            <div class="feature-group-title">🎨 像素精灵 + ⚙️ 架构重构 <span class="tag tag-refactor">重构</span></div>
+            <ul class="feature-list">
+              <li>全面前端化：去掉后端逻辑，游戏引擎完全在浏览器运行</li>
+              <li>像素精灵系统（sprites.js）：6种境界鼠鼠 + 6种武器 + 灵宠进化 + 坐骑 + 18种怪物</li>
+              <li>战斗动画：冲刺攻击/受击闪白震动/击杀爆炸/伤害飘字/突破特效</li>
+              <li>离线收益补算 + 旧存档自动迁移</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v0.1 -->
+      <div class="version-card minor">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v0.1</span>
+          <span class="version-title">初始原型 · 一切的开始</span>
+          <span class="version-date">2026-04-04</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">在AnyDev开发机上从零开始的像素风挂机修仙小游戏</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐣 初始功能</div>
+            <ul class="feature-list">
+              <li>Node.js Express后端，2秒tick战斗循环</li>
+              <li>Canvas像素绘制鼠鼠+怪物</li>
+              <li>基础战斗（自动攻击）、升级、灵石掉落</li>
+              <li>修仙境界体系（炼气→筑基→金丹→元婴→化神→大乘）</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    非凡像素 © 2026 · 鼠鼠修仙 · 3天从0到6700行代码的修仙之旅
+  </footer>
+
+  <script>
+    function toggleVersion(header) {
+      const card = header.parentElement;
+      card.classList.toggle('open');
+    }
+  </script>
+</body>
+</html>
