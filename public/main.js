@@ -269,8 +269,25 @@ function onBattleEvent(eventType, data) {
   // 初始化 Sprite Sheet 桥接层
   // 注意：Sprites / SpriteLoader / GameEngine / Renderer / UI 都是 const 声明
   // const 声明不会挂载到 window 上，所以必须直接引用变量名而非 window.xxx
-  const _OriginalSprites = Sprites;
-  const SpritesBridge = SpriteLoader.init(_OriginalSprites);
+  //
+  // ⚠️ 关键：_OriginalSprites = Sprites 只是引用赋值（指向同一个对象）！
+  // 如果直接用 Object.assign 覆盖 Sprites 的方法，_OriginalSprites 的方法也会被覆盖，
+  // 导致 SpriteRenderer.fallback.drawXXX 调用覆盖后的方法 → 无限递归 → 栈溢出！
+  // 解决：在覆盖前，先把原始方法绑定为独立的函数引用。
+  const _origMethods = {
+    drawMouseByRealm: Sprites.drawMouseByRealm.bind(Sprites),
+    drawMonsterByName: Sprites.drawMonsterByName.bind(Sprites),
+    drawMonsterHPBar: Sprites.drawMonsterHPBar.bind(Sprites),
+    drawActiveBeast: Sprites.drawActiveBeast.bind(Sprites),
+    drawMountCrane: Sprites.drawMountCrane.bind(Sprites),
+    drawMountQilin: Sprites.drawMountQilin.bind(Sprites),
+    drawWeaponWithSkin: Sprites.drawWeaponWithSkin.bind(Sprites),
+    drawArmorSkinOverlay: Sprites.drawArmorSkinOverlay.bind(Sprites),
+  };
+  // 构建 fallback 对象：使用原始方法的绑定副本 + 原始工具属性
+  const fallbackSprites = Object.assign({}, Sprites, _origMethods);
+
+  const SpritesBridge = SpriteLoader.init(fallbackSprites);
   // 用 Object.assign 覆盖原 Sprites 对象的方法（const 对象的属性可以修改）
   Object.assign(Sprites, {
     drawMouseByRealm: (...args) => SpritesBridge.drawMouseByRealm(...args),
