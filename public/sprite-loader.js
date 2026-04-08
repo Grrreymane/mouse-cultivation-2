@@ -192,14 +192,22 @@ const SpriteLoader = (function() {
 
       // 可选：受击闪白 tint
       if (opts.tint) {
-        // 先绘制原图
-        ctx.drawImage(frameCan, drawX, drawY, drawW, drawH);
-        // 用 source-atop 叠加白色/红色
-        ctx.globalCompositeOperation = 'source-atop';
-        ctx.globalAlpha = opts.tintAlpha || 0.5;
-        ctx.fillStyle = opts.tint;
-        ctx.fillRect(drawX, drawY, drawW, drawH);
-        ctx.globalCompositeOperation = 'source-over';
+        // 使用临时canvas进行tint处理，避免在主canvas上产生白色方块
+        const tintCan = document.createElement('canvas');
+        tintCan.width = Math.ceil(drawW);
+        tintCan.height = Math.ceil(drawH);
+        const tctx = tintCan.getContext('2d');
+        tctx.imageSmoothingEnabled = false;
+        // 先绘制原图到临时canvas
+        tctx.drawImage(frameCan, 0, 0, tintCan.width, tintCan.height);
+        // 在临时canvas上用 source-atop 叠加tint色（只影响非透明像素）
+        tctx.globalCompositeOperation = 'source-atop';
+        tctx.globalAlpha = opts.tintAlpha || 0.5;
+        tctx.fillStyle = opts.tint;
+        tctx.fillRect(0, 0, tintCan.width, tintCan.height);
+        // 将处理后的结果绘制到主canvas
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(tintCan, drawX, drawY, drawW, drawH);
       } else {
         // 关闭图片平滑 → 保持像素锐利
         ctx.imageSmoothingEnabled = false;
