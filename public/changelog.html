@@ -137,14 +137,128 @@
       <h1>🐭 鼠鼠修仙 · 迭代记录</h1>
       <p>每一个版本都是一次飞升 ✨</p>
       <div class="stats">
-        <div class="stat"><span class="stat-value">v2.6</span><span class="stat-label">当前版本</span></div>
-        <div class="stat"><span class="stat-value">28</span><span class="stat-label">版本迭代</span></div>
-        <div class="stat"><span class="stat-value">~6000+</span><span class="stat-label">总代码行数</span></div>
-        <div class="stat"><span class="stat-value">3天</span><span class="stat-label">开发周期</span></div>
+        <div class="stat"><span class="stat-value">v2.9</span><span class="stat-label">当前版本</span></div>
+        <div class="stat"><span class="stat-value">31</span><span class="stat-label">版本迭代</span></div>
+        <div class="stat"><span class="stat-value">~7000+</span><span class="stat-label">总代码行数</span></div>
+        <div class="stat"><span class="stat-value">6天</span><span class="stat-label">开发周期</span></div>
       </div>
     </div>
 
     <div class="timeline" id="timeline">
+
+      <!-- v2.9 -->
+      <div class="version-card patch open">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge patch">v2.9</span>
+          <span class="version-title">精灵大小比例优化 + 灵兽/坐骑独立缩放</span>
+          <span class="version-date">2026-04-09</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">灵兽和坐骑引入独立缩放比例，让宠物大小合理匹配角色体型，视觉层次更分明。</div>
+          <div class="feature-group">
+            <div class="feature-group-title">📐 独立缩放系统 <span class="tag tag-balance">平衡</span></div>
+            <ul class="feature-list">
+              <li><strong>灵兽缩放</strong>：新增 <code>BEAST_SCALE_RATIO=0.55</code>，灵兽约79px（比鼠鼠108px小，作为宠物合理）</li>
+              <li><strong>坐骑缩放</strong>：新增 <code>MOUNT_SCALE_RATIO=0.6</code>，坐骑约115px宽（宽但矮，有驮载感）</li>
+              <li>鼠鼠/怪物保持 <code>SCALE_RATIO=0.75</code> → 约108px不变</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🎯 位置微调 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li>灵兽位置优化：从 mouseX-40 调整为 mouseX-30，更贴近鼠鼠</li>
+              <li>灵兽/坐骑底部对齐：<code>adjustedY</code> 从 6*scale 改为 4*scale</li>
+              <li>图鉴 scale 配合新比例调整为 1.0~1.2</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v2.8 -->
+      <div class="version-card minor open">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v2.8</span>
+          <span class="version-title">精灵放大2.5倍 + 修复帧方向不一致 + 朝向修正</span>
+          <span class="version-date">2026-04-09</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">精灵图集角色从43px放大到108px（约2.5倍），修复多个精灵帧朝向不一致导致的"一会左一会右"问题。</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🔍 精灵放大 <span class="tag tag-visual">视觉</span></div>
+            <ul class="feature-list">
+              <li><strong>SCALE_RATIO</strong>：从 0.3 提升到 0.75，精灵视觉大小放大约2.5倍</li>
+              <li>战斗场景精灵从约43px增大到约108px，视觉更饱满</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🔄 帧方向修复 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li><strong>怪物图集</strong>：修复11帧方向翻转（墨蛟蛇/化龙妖蛟/血衣魔修/天魔老祖等）</li>
+              <li><strong>灵兽图集</strong>：修复2帧方向翻转（蛟龙frame1/天凤frame0）</li>
+              <li><strong>鼠鼠图集</strong>：修复3帧方向翻转（元婴/化神/大乘期）</li>
+              <li>通过像素质心分析自动检测并翻转方向不一致的帧</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">➡️ 朝向修正 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li><strong>怪物 flipX</strong>：根据实际图集朝向重新配置（面LEFT的不翻转）</li>
+              <li><strong>灵兽朝右</strong>：配合 renderer 的 <code>ctx.scale(-1,1)</code> 确保灵兽面向怪物</li>
+              <li><strong>坐骑朝右</strong>：麒麟 flipX=true 配合 renderer 翻转</li>
+              <li>解决天凤和蛟龙"一会朝左一会朝右"的闪烁问题</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v2.7 -->
+      <div class="version-card major open">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge major">v2.7</span>
+          <span class="version-title">🎨 Sprite Sheet 精灵图集系统上线</span>
+          <span class="version-date">2026-04-08</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">里程碑版本！鼠鼠修仙2独立仓库建立，告别Canvas逐像素手绘，全面迁移到Sprite Sheet（PNG精灵图集 + drawImage）渲染架构。</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🏗️ 架构重制 <span class="tag tag-refactor">重构</span></div>
+            <ul class="feature-list">
+              <li><strong>新仓库</strong>：mouse-cultivation-2 独立仓库，部署到 grrreymane.github.io/mouse-cultivation-2/</li>
+              <li><strong>6模块拆分</strong>：原 index.html 2301行拆分为 index.html(508行) + renderer.js(789行) + ui.js(654行) + main.js(351行)</li>
+              <li><strong>命名空间</strong>：onclick 全部重构为 <code>Actions.xxx()</code> / <code>UI.xxx()</code></li>
+              <li><strong>GDD.md</strong>：完整Game Design Document留档，全部玩法系统+数值+怪物表</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🖼️ 精灵图集系统 <span class="tag tag-new">全新</span></div>
+            <ul class="feature-list">
+              <li><strong>sprite-loader.js</strong>(585行)：Sprite Sheet加载/管理/渲染桥接层</li>
+              <li><strong>4张图集</strong>：monsters.png(192×864,18种怪物) / beasts.png(192×288,6种灵兽) / mouse.png(192×288,6境界鼠鼠) / mounts.png(256×96,2种坐骑)</li>
+              <li><strong>AI生图 + 自动化处理</strong>：LightAI生成原始素材 → Python脚本自适应检测棋盘格背景色 → 连通域分析过滤文字标签 → 切割组装为48×48网格图集</li>
+              <li><strong>智能Fallback</strong>：图集加载成功→drawImage，失败→自动回退Canvas手绘</li>
+              <li><strong>SCALE_RATIO补偿</strong>：解决SpriteSheet scale语义与原始sprites.js的3.7倍尺寸差异</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐛 致命Bug修复 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li><strong>const声明陷阱</strong>：<code>const Sprites</code> 不挂载到 window，改用 <code>Object.assign</code> 原地覆盖</li>
+              <li><strong>Object.assign + 引用赋值 = 无限递归</strong>：<code>const backup = Sprites</code> 是引用而非拷贝，覆盖后backup的方法也被覆盖 → fallback无限递归 → Canvas渲染静默失败。修复：用 <code>.bind()</code> 提取原始方法为独立函数引用</li>
+              <li><strong>Canvas rAF静默吞异常</strong>：requestAnimationFrame中栈溢出无可见报错，添加try-catch+console.error</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">📊 代码规模 <span class="tag tag-refactor">重构</span></div>
+            <ul class="feature-list">
+              <li>总计6个JS模块：engine.js(2565行) + sprites.js(2030行) + renderer.js(789行) + ui.js(654行) + sprite-loader.js(585行) + main.js(351行) = <strong>~6974行</strong></li>
+              <li>sprites.js 保留作为fallback兜底，图集渲染为主渲染路径</li>
+            </ul>
+          </div>
+        </div>
+      </div>
 
       <!-- v2.6 -->
       <div class="version-card minor open">
@@ -983,7 +1097,7 @@
   </main>
 
   <footer class="site-footer">
-    非凡像素 © 2026 · 鼠鼠修仙 · 3天从0到6700行代码的修仙之旅
+    非凡像素 © 2026 · 鼠鼠修仙 · 6天从0到7000行代码的修仙之旅
   </footer>
 
   <script>
