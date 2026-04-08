@@ -595,8 +595,8 @@ const Renderer = (() => {
         const shakeX = monsterHitAnim > 0 ? (Math.random()-0.5) * monsterHitAnim * 1.5 : 0;
         const shakeY = monsterHitAnim > 0 ? (Math.random()-0.5) * monsterHitAnim * 0.8 : 0;
         if (monsterHitAnim > 5) {
-          ctx.globalAlpha = 0.4; ctx.fillStyle = '#FFFFFF';
-          ctx.beginPath(); ctx.arc(monsterX, monsterY, 20, 0, Math.PI*2); ctx.fill();
+          ctx.globalAlpha = 0.2; ctx.fillStyle = '#FFFFFF';
+          ctx.beginPath(); ctx.arc(monsterX, monsterY - 40, 15, 0, Math.PI*2); ctx.fill();
           ctx.globalAlpha = 1;
         }
 
@@ -681,7 +681,7 @@ const Renderer = (() => {
   function drawMonsterUI(gs, monsterX, monsterY) {
     const m = gs.currentMonster;
     const barW = 56, barH = 5;
-    const barX = monsterX - barW/2, barY = monsterY - 55;
+    const barX = monsterX - barW/2, barY = monsterY - 120;
 
     ctx.fillStyle = '#222'; ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
 
