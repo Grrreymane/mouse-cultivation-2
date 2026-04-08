@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-slice_sprites.py v3 — 鼠鼠修仙2 Sprite Sheet 切割工具
+slice_sprites.py v4 — 鼠鼠修仙2 Sprite Sheet 切割工具
 
 改进点：
 - 全局背景色检测（不仅靠角落，用整图亮度直方图的两个峰值）
 - 自适应容差（基于两种背景色之间的距离）
 - 文字标签检测和过滤
 - 抗锯齿半透明边缘处理
+- v4: 新增区域检测模式——对含文字标签的图集(如sheet_3)自动定位精灵区域，
+      不再依赖等分切割，彻底解决精灵碎片化问题
 """
 
 import os
@@ -182,6 +184,117 @@ def fit_to_frame(rgba_arr, frame_w, frame_h, padding=1):
     return canvas
 
 
+def find_sprite_regions(row_arr, dark_color, light_color, tolerance, min_width=100):
+    """
+    在一行图像中检测宽度>min_width的精灵区域。
+    用于处理含文字标签的图集（如 monsters_sheet_3），
+    这些图集无法用简单的等分切割来提取精灵帧。
+    
+    返回: [(x_start, x_end), ...] 列表
+    """
+    ch, cw = row_arr.shape[:2]
+    rpix = row_arr[:, :, :3].astype(float)
+    dist_d = np.sqrt(np.sum((rpix - dark_color) ** 2, axis=2))
+    dist_l = np.sqrt(np.sum((rpix - light_color) ** 2, axis=2))
+    min_dist = np.minimum(dist_d, dist_l)
+    opaque = min_dist > tolerance * 1.5
+    x_profile = np.sum(opaque, axis=0)
+    
+    regions = []
+    in_region = False
+    region_start = 0
+    for x in range(cw):
+        if x_profile[x] > 0:
+            if not in_region:
+                region_start = x
+                in_region = True
+        else:
+            if in_region:
+                width = x - region_start
+                if width >= min_width:
+                    regions.append((region_start, x - 1))
+                in_region = False
+    if in_region:
+        width = cw - region_start
+        if width >= min_width:
+            regions.append((region_start, cw - 1))
+    return regions
+
+
+def process_sheet_regions(input_file, output_file, rows, target_cols=4,
+                          frame_w=48, frame_h=48, min_region_width=100):
+    """
+    区域检测模式切割。
+    适用于含文字标签的图集（精灵帧数不等于列数的情况）。
+    
+    策略：对每行单独检测精灵区域（宽度>min_region_width），
+    取前 target_cols 帧作为动画帧。
+    """
+    print(f"\n{'='*60}")
+    print(f"📋 {os.path.basename(input_file)} [REGION MODE]")
+    print(f"   Rows: {rows}, Target cols: {target_cols}, Frame: {frame_w}×{frame_h}")
+    
+    img = Image.open(input_file).convert('RGB')
+    arr = np.array(img)
+    src_h, src_w = arr.shape[:2]
+    print(f"   Source: {src_w}×{src_h}")
+    
+    dark_bg, light_bg = detect_bg_global(arr)
+    print(f"   BG colors: dark=({dark_bg[0]:.0f},{dark_bg[1]:.0f},{dark_bg[2]:.0f}), "
+          f"light=({light_bg[0]:.0f},{light_bg[1]:.0f},{light_bg[2]:.0f})")
+    
+    color_dist = np.linalg.norm(dark_bg - light_bg)
+    tol = max(20, min(50, color_dist * 0.35))
+    print(f"   Color distance: {color_dist:.1f}, Tolerance: {tol:.1f}")
+    
+    cell_h = src_h // rows
+    sprites = []
+    
+    for r in range(rows):
+        y1, y2 = r * cell_h, (r + 1) * cell_h
+        row = arr[y1:y2]
+        
+        regions = find_sprite_regions(row, dark_bg, light_bg, tol, min_region_width)
+        print(f"   Row {r}: found {len(regions)} sprite regions (need {target_cols})")
+        
+        for c in range(target_cols):
+            if c < len(regions):
+                xs, xe = regions[c]
+            else:
+                # 不足target_cols帧，复制最后一帧
+                xs, xe = regions[min(c, len(regions) - 1)]
+            
+            # 添加5px padding以确保精灵边缘完整
+            xs = max(0, xs - 5)
+            xe = min(src_w - 1, xe + 5)
+            cell = row[:, xs:xe + 1]
+            
+            # 去背景（不需要remove_text_labels，因为区域检测已精确定位）
+            rgba = remove_bg(cell, dark_bg, light_bg, tolerance=tol)
+            cropped = tight_crop(rgba)
+            frame = fit_to_frame(cropped, frame_w, frame_h)
+            sprites.append(frame)
+            
+            content_size = f"{cropped.shape[1]}×{cropped.shape[0]}" if cropped is not None else "EMPTY"
+            print(f"   [{r},{c}] region=[{xs},{xe}] {content_size} → {frame_w}×{frame_h}")
+    
+    # 组装
+    sheet_w = target_cols * frame_w
+    sheet_h = rows * frame_h
+    sheet = Image.new('RGBA', (sheet_w, sheet_h), (0, 0, 0, 0))
+    
+    for idx, sprite in enumerate(sprites):
+        r, c = idx // target_cols, idx % target_cols
+        sheet.paste(sprite, (c * frame_w, r * frame_h), sprite)
+    
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    sheet.save(output_file, 'PNG', optimize=True)
+    size_kb = os.path.getsize(output_file) / 1024
+    print(f"   ✅ Output: {sheet_w}×{sheet_h} ({size_kb:.1f} KB)")
+    
+    return sheet
+
+
 def process_sheet(input_file, output_file, rows, cols, frame_w=48, frame_h=48,
                   tolerance_override=None, skip_top_px=0):
     """处理一张原始 AI 生成图"""
@@ -282,10 +395,11 @@ def detect_title_bar_height(arr, max_scan=300):
 
 def main():
     print("=" * 60)
-    print("🎮 鼠鼠修仙2 Sprite Sheet Processor v3")
+    print("🎮 鼠鼠修仙2 Sprite Sheet Processor v4")
     print("=" * 60)
     
     # --- 怪物 (3 × 6行×4列 → 18行×4列) ---
+    # Sheet 1 & 2: 标准4等分切割（炼气/筑基/金丹/元婴）
     m1 = process_sheet(
         os.path.join(ART_DIR, 'monsters_sheet_1_01.png'),
         os.path.join(OUT_DIR, '_m1.png'),
@@ -296,10 +410,11 @@ def main():
         os.path.join(OUT_DIR, '_m2.png'),
         rows=6, cols=4, frame_w=48, frame_h=48
     )
-    m3 = process_sheet(
+    # Sheet 3: 区域检测模式（化神/大乘 — 含文字标签列）
+    m3 = process_sheet_regions(
         os.path.join(ART_DIR, 'monsters_sheet_3_01.png'),
         os.path.join(OUT_DIR, '_m3.png'),
-        rows=6, cols=4, frame_w=48, frame_h=48
+        rows=6, target_cols=4, frame_w=48, frame_h=48
     )
     
     print(f"\n{'='*60}")
