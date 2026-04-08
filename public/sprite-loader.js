@@ -334,8 +334,8 @@ const SpriteLoader = (function() {
 
     // --- 鼠鼠（含境界/皮肤） ---
     drawMouseByRealm(ctx, x, y, scale, realmIndex, animFrame, attacking, options) {
-      // 鼠鼠有6种境界 × 皮肤组合，精灵名约定：mouse_realm_{0-5}
-      // 带皮肤时：mouse_realm_{0-5}_ws_{skinId} / mouse_realm_{0-5}_as_{skinId}
+      // 鼠鼠有6种境界，精灵名约定：mouse_realm_{0-5}
+      // 没有单独的攻击帧——攻击动画由 renderer.js 的冲刺位移实现
       const opts = options || {};
       let spriteName = `mouse_realm_${realmIndex}`;
       
@@ -350,15 +350,6 @@ const SpriteLoader = (function() {
       }
 
       const drawOpts = {};
-      if (attacking > 0) {
-        // 攻击时用攻击帧序列（如果有定义）
-        const atkName = spriteName + '_atk';
-        if (this.atlas.find(atkName)) {
-          const ok = this.atlas.draw(ctx, atkName, x, y, scale, attacking, drawOpts);
-          if (ok) return;
-        }
-      }
-
       const ok = this.atlas.draw(ctx, spriteName, x, y, scale, animFrame, drawOpts);
       if (!ok) {
         this.fallback.drawMouseByRealm(ctx, x, y, scale, realmIndex, animFrame, attacking, options);
@@ -480,21 +471,16 @@ const SpriteLoader = (function() {
     });
     atlas.add('mounts', mountsSheet);
 
-    // --- 鼠鼠图集（6境界 × idle/atk 两种状态）---
+    // --- 鼠鼠图集（6境界 × idle 4帧）---
+    // 当前只有 idle 动画帧，攻击动画通过冲刺位移模拟（在 renderer.js 中实现）
     const mouseSheet = new SpriteSheet('assets/mouse.png', 48, 48);
     mouseSheet.defineAll({
-      'mouse_realm_0':     { row: 0, col: 0, frames: 4 },  // 炼气期 idle
-      'mouse_realm_0_atk': { row: 1, col: 0, frames: 4 },  // 炼气期 attack
-      'mouse_realm_1':     { row: 2, col: 0, frames: 4 },  // 筑基期 idle
-      'mouse_realm_1_atk': { row: 3, col: 0, frames: 4 },
-      'mouse_realm_2':     { row: 4, col: 0, frames: 4 },  // 金丹期 idle
-      'mouse_realm_2_atk': { row: 5, col: 0, frames: 4 },
-      'mouse_realm_3':     { row: 6, col: 0, frames: 4 },  // 元婴期 idle
-      'mouse_realm_3_atk': { row: 7, col: 0, frames: 4 },
-      'mouse_realm_4':     { row: 8, col: 0, frames: 4 },  // 化神期 idle
-      'mouse_realm_4_atk': { row: 9, col: 0, frames: 4 },
-      'mouse_realm_5':     { row: 10, col: 0, frames: 4 }, // 大乘期 idle
-      'mouse_realm_5_atk': { row: 11, col: 0, frames: 4 },
+      'mouse_realm_0': { row: 0, col: 0, frames: 4 },  // 炼气期
+      'mouse_realm_1': { row: 1, col: 0, frames: 4 },  // 筑基期
+      'mouse_realm_2': { row: 2, col: 0, frames: 4 },  // 金丹期
+      'mouse_realm_3': { row: 3, col: 0, frames: 4 },  // 元婴期
+      'mouse_realm_4': { row: 4, col: 0, frames: 4 },  // 化神期
+      'mouse_realm_5': { row: 5, col: 0, frames: 4 },  // 大乘期
     });
     atlas.add('mouse', mouseSheet);
 
