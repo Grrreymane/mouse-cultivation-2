@@ -400,8 +400,12 @@ const UI = (() => {
         if (!cvs) continue;
         const cctx = cvs.getContext('2d');
         cctx.clearRect(0, 0, 48, 48);
-        const scale = item.tier <= 1 ? 1.6 : item.tier <= 3 ? 1.3 : 1.1;
-        Sprites.drawMonsterByName(cctx, item.name, 24, 28, scale, 0, 0);
+        // SpriteSheet 通过 SpriteRenderer 的 SCALE_RATIO(0.3) 缩放
+        // 为在 48×48 小 canvas 中填满，需要用较大的 scale
+        // SpriteSheet: 48 * scale * 0.3 ≈ 40px → scale ≈ 2.8
+        // Fallback: 角色约 13*scale px → scale=2.8 → 36px，也OK
+        const scale = item.tier <= 1 ? 2.8 : item.tier <= 3 ? 2.5 : 2.2;
+        Sprites.drawMonsterByName(cctx, item.name, 24, 32, scale, 0, 0);
       }
     });
   }

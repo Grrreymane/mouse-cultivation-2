@@ -315,6 +315,12 @@ const SpriteLoader = (function() {
     constructor(atlas, fallbackSprites) {
       this.atlas = atlas;
       this.fallback = fallbackSprites;
+      // 原始 sprites.js 中 scale 表示"每个像素方块的物理尺寸"，角色约 13×11 方块
+      // SpriteSheet 中 scale 乘以整个帧(48×48)。
+      // 为匹配视觉大小：原始 scale=3 → 角色约 40px 宽
+      // SpriteSheet scale=3 → 48*3=144px 宽
+      // 比率 = 40/144 ≈ 0.28，取 0.3 略大一点更好看
+      this.SCALE_RATIO = 0.3;
     }
 
     // --- 怪物 ---
@@ -325,7 +331,12 @@ const SpriteLoader = (function() {
         opts.tint = '#FFF';
         opts.tintAlpha = Math.min(hitAnim / 5, 0.6);
       }
-      const ok = this.atlas.draw(ctx, name, x, y, scale, animFrame, opts);
+      // 原始绘制中心在 (x, y) 附近，角色约 -7s 到 +4s 垂直范围
+      // SpriteSheet anchor (0.5, 1.0) = 底部居中
+      // 需要把 y 调整为 "角色底部" 位置：y + 4*scale（原始角色底部在 y+4s 处）
+      const adjustedScale = scale * this.SCALE_RATIO;
+      const adjustedY = y + 4 * scale; // 原始角色底部偏移
+      const ok = this.atlas.draw(ctx, name, x, adjustedY, adjustedScale, animFrame, opts);
       if (!ok) {
         // fallback 原始 Canvas 绘制
         this.fallback.drawMonsterByName(ctx, name, x, y, scale, animFrame, hitAnim);
@@ -334,8 +345,6 @@ const SpriteLoader = (function() {
 
     // --- 鼠鼠（含境界/皮肤） ---
     drawMouseByRealm(ctx, x, y, scale, realmIndex, animFrame, attacking, options) {
-      // 鼠鼠有6种境界，精灵名约定：mouse_realm_{0-5}
-      // 没有单独的攻击帧——攻击动画由 renderer.js 的冲刺位移实现
       const opts = options || {};
       let spriteName = `mouse_realm_${realmIndex}`;
       
@@ -350,7 +359,9 @@ const SpriteLoader = (function() {
       }
 
       const drawOpts = {};
-      const ok = this.atlas.draw(ctx, spriteName, x, y, scale, animFrame, drawOpts);
+      const adjustedScale = scale * this.SCALE_RATIO;
+      const adjustedY = y + 4 * scale;
+      const ok = this.atlas.draw(ctx, spriteName, x, adjustedY, adjustedScale, animFrame, drawOpts);
       if (!ok) {
         this.fallback.drawMouseByRealm(ctx, x, y, scale, realmIndex, animFrame, attacking, options);
       }
@@ -358,7 +369,9 @@ const SpriteLoader = (function() {
 
     // --- 灵兽 ---
     drawActiveBeast(ctx, x, y, scale, beastTemplateId, animFrame) {
-      const ok = this.atlas.draw(ctx, beastTemplateId, x, y, scale, animFrame);
+      const adjustedScale = scale * this.SCALE_RATIO;
+      const adjustedY = y + 4 * scale;
+      const ok = this.atlas.draw(ctx, beastTemplateId, x, adjustedY, adjustedScale, animFrame);
       if (!ok) {
         this.fallback.drawActiveBeast(ctx, x, y, scale, beastTemplateId, animFrame);
       }
@@ -366,14 +379,18 @@ const SpriteLoader = (function() {
 
     // --- 坐骑 ---
     drawMountCrane(ctx, x, y, scale, animFrame) {
-      const ok = this.atlas.draw(ctx, 'mount_crane', x, y, scale, animFrame);
+      const adjustedScale = scale * this.SCALE_RATIO;
+      const adjustedY = y + 4 * scale;
+      const ok = this.atlas.draw(ctx, 'mount_crane', x, adjustedY, adjustedScale, animFrame);
       if (!ok) {
         this.fallback.drawMountCrane(ctx, x, y, scale, animFrame);
       }
     }
 
     drawMountQilin(ctx, x, y, scale, animFrame) {
-      const ok = this.atlas.draw(ctx, 'mount_qilin', x, y, scale, animFrame);
+      const adjustedScale = scale * this.SCALE_RATIO;
+      const adjustedY = y + 4 * scale;
+      const ok = this.atlas.draw(ctx, 'mount_qilin', x, adjustedY, adjustedScale, animFrame);
       if (!ok) {
         this.fallback.drawMountQilin(ctx, x, y, scale, animFrame);
       }
