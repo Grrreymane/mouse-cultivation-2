@@ -315,12 +315,11 @@ const SpriteLoader = (function() {
     constructor(atlas, fallbackSprites) {
       this.atlas = atlas;
       this.fallback = fallbackSprites;
-      // 原始 sprites.js 中 scale 表示"每个像素方块的物理尺寸"，角色约 13×11 方块
-      // SpriteSheet 中 scale 乘以整个帧(48×48)。
-      // 为匹配视觉大小：原始 scale=3 → 角色约 40px 宽
-      // SpriteSheet scale=3 → 48*3=144px 宽
-      // 比率 = 40/144 ≈ 0.28，取 0.3 略大一点更好看
-      this.SCALE_RATIO = 0.3;
+      // 精灵图集缩放比率
+      // SpriteSheet scale 乘以整帧(48×48)尺寸
+      // SCALE_RATIO=0.75 → PIXEL_SCALE(3) × 0.75 = 2.25 → 48×2.25 = 108px 宽
+      // 角色约占画面 ~108px，视觉上比鼠鼠1稍大，效果好
+      this.SCALE_RATIO = 0.75;
     }
 
     // --- 怪物 ---
@@ -331,11 +330,8 @@ const SpriteLoader = (function() {
         opts.tint = '#FFF';
         opts.tintAlpha = Math.min(hitAnim / 5, 0.6);
       }
-      // 原始绘制中心在 (x, y) 附近，角色约 -7s 到 +4s 垂直范围
-      // SpriteSheet anchor (0.5, 1.0) = 底部居中
-      // 需要把 y 调整为 "角色底部" 位置：y + 4*scale（原始角色底部在 y+4s 处）
       const adjustedScale = scale * this.SCALE_RATIO;
-      const adjustedY = y + 4 * scale; // 原始角色底部偏移
+      const adjustedY = y + 6 * scale; // 精灵底部对齐地面
       const ok = this.atlas.draw(ctx, name, x, adjustedY, adjustedScale, animFrame, opts);
       if (!ok) {
         // fallback 原始 Canvas 绘制
@@ -360,7 +356,7 @@ const SpriteLoader = (function() {
 
       const drawOpts = {};
       const adjustedScale = scale * this.SCALE_RATIO;
-      const adjustedY = y + 4 * scale;
+      const adjustedY = y + 6 * scale;
       const ok = this.atlas.draw(ctx, spriteName, x, adjustedY, adjustedScale, animFrame, drawOpts);
       if (!ok) {
         this.fallback.drawMouseByRealm(ctx, x, y, scale, realmIndex, animFrame, attacking, options);
@@ -370,7 +366,7 @@ const SpriteLoader = (function() {
     // --- 灵兽 ---
     drawActiveBeast(ctx, x, y, scale, beastTemplateId, animFrame) {
       const adjustedScale = scale * this.SCALE_RATIO;
-      const adjustedY = y + 4 * scale;
+      const adjustedY = y + 6 * scale;
       const ok = this.atlas.draw(ctx, beastTemplateId, x, adjustedY, adjustedScale, animFrame);
       if (!ok) {
         this.fallback.drawActiveBeast(ctx, x, y, scale, beastTemplateId, animFrame);
@@ -380,7 +376,7 @@ const SpriteLoader = (function() {
     // --- 坐骑 ---
     drawMountCrane(ctx, x, y, scale, animFrame) {
       const adjustedScale = scale * this.SCALE_RATIO;
-      const adjustedY = y + 4 * scale;
+      const adjustedY = y + 6 * scale;
       const ok = this.atlas.draw(ctx, 'mount_crane', x, adjustedY, adjustedScale, animFrame);
       if (!ok) {
         this.fallback.drawMountCrane(ctx, x, y, scale, animFrame);
@@ -389,7 +385,7 @@ const SpriteLoader = (function() {
 
     drawMountQilin(ctx, x, y, scale, animFrame) {
       const adjustedScale = scale * this.SCALE_RATIO;
-      const adjustedY = y + 4 * scale;
+      const adjustedY = y + 6 * scale;
       const ok = this.atlas.draw(ctx, 'mount_qilin', x, adjustedY, adjustedScale, animFrame);
       if (!ok) {
         this.fallback.drawMountQilin(ctx, x, y, scale, animFrame);
@@ -441,50 +437,55 @@ const SpriteLoader = (function() {
     // --- 怪物图集 ---
     const monstersSheet = new SpriteSheet('assets/monsters.png', 48, 48);
     monstersSheet.defineAll({
-      // 炼气期 (tier 0) — row 0-2
+      // 炼气期 (tier 0) — row 0-2 — 图集面RIGHT，需翻转
       '灰毛妖鼠':     { row: 0, col: 0, frames: 4, flipX: true },
       '毒蟾蜍':       { row: 1, col: 0, frames: 4, flipX: true },
       '赤狐妖':       { row: 2, col: 0, frames: 4, flipX: true },
       // 筑基期 (tier 1) — row 3-5
-      '铁甲傀儡':     { row: 3, col: 0, frames: 4, flipX: true },
-      '墨蛟蛇':       { row: 4, col: 0, frames: 4, flipX: true },
-      '暴猿妖':       { row: 5, col: 0, frames: 4, flipX: true },
+      '铁甲傀儡':     { row: 3, col: 0, frames: 4, flipX: false },   // CENTER
+      '墨蛟蛇':       { row: 4, col: 0, frames: 4, flipX: false },   // 已面LEFT
+      '暴猿妖':       { row: 5, col: 0, frames: 4, flipX: false },   // 已面LEFT
       // 金丹期 (tier 2) — row 6-8
-      '冰魄蜘蛛':     { row: 6, col: 0, frames: 4, flipX: true },
-      '三眼火鸦':     { row: 7, col: 0, frames: 4, flipX: true },
-      '豹形雷兽':     { row: 8, col: 0, frames: 4, flipX: true },
+      '冰魄蜘蛛':     { row: 6, col: 0, frames: 4, flipX: false },   // 已面LEFT
+      '三眼火鸦':     { row: 7, col: 0, frames: 4, flipX: false },   // CENTER
+      '豹形雷兽':     { row: 8, col: 0, frames: 4, flipX: true },    // 面RIGHT，需翻转
       // 元婴期 (tier 3) — row 9-11
-      '鬼影修士':     { row: 9,  col: 0, frames: 4, flipX: true },
-      '化龙妖蛟':     { row: 10, col: 0, frames: 4, flipX: true },
-      '血衣魔修':     { row: 11, col: 0, frames: 4, flipX: true },
+      '鬼影修士':     { row: 9,  col: 0, frames: 4, flipX: true },   // 面RIGHT，需翻转
+      '化龙妖蛟':     { row: 10, col: 0, frames: 4, flipX: false },  // 已面LEFT
+      '血衣魔修':     { row: 11, col: 0, frames: 4, flipX: false },  // 已面LEFT
       // 化神期 (tier 4) — row 12-14
-      '天魔老祖':     { row: 12, col: 0, frames: 4, flipX: true },
-      '九尾天狐':     { row: 13, col: 0, frames: 4, flipX: true },
-      '血魔宗主':     { row: 14, col: 0, frames: 4, flipX: true },
+      '天魔老祖':     { row: 12, col: 0, frames: 4, flipX: false },  // 已面LEFT
+      '九尾天狐':     { row: 13, col: 0, frames: 4, flipX: false },  // 已面LEFT
+      '血魔宗主':     { row: 14, col: 0, frames: 4, flipX: false },  // 已面LEFT
       // 大乘期 (tier 5) — row 15-17
-      '劫雷真龙':     { row: 15, col: 0, frames: 4, flipX: true },
-      '混沌古兽':     { row: 16, col: 0, frames: 4, flipX: true },
-      '天道魔神':     { row: 17, col: 0, frames: 4, flipX: true },
+      '劫雷真龙':     { row: 15, col: 0, frames: 4, flipX: false },  // 已面LEFT
+      '混沌古兽':     { row: 16, col: 0, frames: 4, flipX: false },  // 已面LEFT
+      '天道魔神':     { row: 17, col: 0, frames: 4, flipX: false },  // 已面LEFT
     });
     atlas.add('monsters', monstersSheet);
 
     // --- 灵兽图集 ---
     const beastsSheet = new SpriteSheet('assets/beasts.png', 48, 48);
     beastsSheet.defineAll({
-      'fire_cat':       { row: 0, col: 0, frames: 4 },
-      'ice_wolf':       { row: 1, col: 0, frames: 4 },
-      'thunder_eagle':  { row: 2, col: 0, frames: 4 },
-      'shadow_serpent':  { row: 3, col: 0, frames: 4 },
-      'jade_dragon':    { row: 4, col: 0, frames: 4 },
-      'phoenix':        { row: 5, col: 0, frames: 4 },
+      // renderer.js 中灵兽绘制带 ctx.scale(-1,1)，所以精灵需先面LEFT
+      // 面RIGHT的加flipX:true翻成LEFT → renderer翻回RIGHT（朝怪物）✅
+      // 面LEFT的不翻 → renderer翻为RIGHT（朝怪物）✅
+      'fire_cat':       { row: 0, col: 0, frames: 4, flipX: true },   // 图集面RIGHT
+      'ice_wolf':       { row: 1, col: 0, frames: 4, flipX: true },   // 图集面RIGHT
+      'thunder_eagle':  { row: 2, col: 0, frames: 4, flipX: false },  // CENTER
+      'shadow_serpent':  { row: 3, col: 0, frames: 4, flipX: true },  // 图集面RIGHT
+      'jade_dragon':    { row: 4, col: 0, frames: 4, flipX: false },  // 图集面LEFT
+      'phoenix':        { row: 5, col: 0, frames: 4, flipX: false },  // 图集面LEFT
     });
     atlas.add('beasts', beastsSheet);
 
     // --- 坐骑图集 ---
     const mountsSheet = new SpriteSheet('assets/mounts.png', 64, 48);
     mountsSheet.defineAll({
-      'mount_crane': { row: 0, col: 0, frames: 4 },
-      'mount_qilin': { row: 1, col: 0, frames: 4 },
+      // renderer.js 中坐骑绘制带 ctx.scale(-1,1)，逻辑同灵兽
+      // 面RIGHT的加flipX:true翻成LEFT → renderer翻回RIGHT ✅
+      'mount_crane': { row: 0, col: 0, frames: 4, flipX: false },   // CENTER
+      'mount_qilin': { row: 1, col: 0, frames: 4, flipX: true },    // 面RIGHT
     });
     atlas.add('mounts', mountsSheet);
 
