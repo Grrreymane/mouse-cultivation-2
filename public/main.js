@@ -267,9 +267,12 @@ function onBattleEvent(eventType, data) {
 // ========== 启动 ==========
 (function boot() {
   // 初始化 Sprite Sheet 桥接层
-  const _OriginalSprites = window.Sprites;
+  // 注意：Sprites / SpriteLoader / GameEngine / Renderer / UI 都是 const 声明
+  // const 声明不会挂载到 window 上，所以必须直接引用变量名而非 window.xxx
+  const _OriginalSprites = Sprites;
   const SpritesBridge = SpriteLoader.init(_OriginalSprites);
-  window.Sprites = {
+  // 用 Object.assign 覆盖原 Sprites 对象的方法（const 对象的属性可以修改）
+  Object.assign(Sprites, {
     drawMouseByRealm: (...args) => SpritesBridge.drawMouseByRealm(...args),
     drawMonsterByName: (...args) => SpritesBridge.drawMonsterByName(...args),
     drawMonsterHPBar: (...args) => SpritesBridge.drawMonsterHPBar(...args),
@@ -278,13 +281,7 @@ function onBattleEvent(eventType, data) {
     drawMountQilin: (...args) => SpritesBridge.drawMountQilin(...args),
     drawWeaponWithSkin: (...args) => SpritesBridge.drawWeaponWithSkin(...args),
     drawArmorSkinOverlay: (...args) => SpritesBridge.drawArmorSkinOverlay(...args),
-    armorSkinColors: _OriginalSprites.armorSkinColors,
-    rect: _OriginalSprites.rect,
-    px: _OriginalSprites.px,
-    circle: _OriginalSprites.circle,
-    ellipse: _OriginalSprites.ellipse,
-    roundRect: _OriginalSprites.roundRect,
-  };
+  });
 
   // 初始化 UI
   UI.initTabs();
