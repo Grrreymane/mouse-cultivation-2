@@ -317,9 +317,10 @@ const SpriteLoader = (function() {
       this.fallback = fallbackSprites;
       // 精灵图集缩放比率
       // SpriteSheet scale 乘以整帧(48×48)尺寸
-      // SCALE_RATIO=0.75 → PIXEL_SCALE(3) × 0.75 = 2.25 → 48×2.25 = 108px 宽
-      // 角色约占画面 ~108px，视觉上比鼠鼠1稍大，效果好
-      this.SCALE_RATIO = 0.75;
+      // SCALE_RATIO × PIXEL_SCALE(3) × 48 = 最终像素宽度
+      this.SCALE_RATIO = 0.75;        // 鼠鼠 & 怪物: 48×3×0.75 = 108px
+      this.BEAST_SCALE_RATIO = 0.55;  // 灵兽: 48×3×0.55 = 79px (比鼠鼠小，作为宠物)
+      this.MOUNT_SCALE_RATIO = 0.6;   // 坐骑: 64×3×0.6 = 115px (比鼠鼠宽但矮，驮载感)
     }
 
     // --- 怪物 ---
@@ -365,8 +366,8 @@ const SpriteLoader = (function() {
 
     // --- 灵兽 ---
     drawActiveBeast(ctx, x, y, scale, beastTemplateId, animFrame) {
-      const adjustedScale = scale * this.SCALE_RATIO;
-      const adjustedY = y + 6 * scale;
+      const adjustedScale = scale * this.BEAST_SCALE_RATIO;
+      const adjustedY = y + 4 * scale;
       const ok = this.atlas.draw(ctx, beastTemplateId, x, adjustedY, adjustedScale, animFrame);
       if (!ok) {
         this.fallback.drawActiveBeast(ctx, x, y, scale, beastTemplateId, animFrame);
@@ -375,8 +376,8 @@ const SpriteLoader = (function() {
 
     // --- 坐骑 ---
     drawMountCrane(ctx, x, y, scale, animFrame) {
-      const adjustedScale = scale * this.SCALE_RATIO;
-      const adjustedY = y + 6 * scale;
+      const adjustedScale = scale * this.MOUNT_SCALE_RATIO;
+      const adjustedY = y + 4 * scale;
       const ok = this.atlas.draw(ctx, 'mount_crane', x, adjustedY, adjustedScale, animFrame);
       if (!ok) {
         this.fallback.drawMountCrane(ctx, x, y, scale, animFrame);
@@ -384,8 +385,8 @@ const SpriteLoader = (function() {
     }
 
     drawMountQilin(ctx, x, y, scale, animFrame) {
-      const adjustedScale = scale * this.SCALE_RATIO;
-      const adjustedY = y + 6 * scale;
+      const adjustedScale = scale * this.MOUNT_SCALE_RATIO;
+      const adjustedY = y + 4 * scale;
       const ok = this.atlas.draw(ctx, 'mount_qilin', x, adjustedY, adjustedScale, animFrame);
       if (!ok) {
         this.fallback.drawMountQilin(ctx, x, y, scale, animFrame);

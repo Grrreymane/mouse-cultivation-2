@@ -556,7 +556,7 @@ const Renderer = (() => {
 
       // 出战灵兽
       if (gs.activeBeast && !gs.isDead) {
-        let petX = mouseX - 40, petY = mouseY - 5;
+        let petX = mouseX - 30, petY = mouseY + 5;
         if (beastAttackAnim > 0) {
           const atkProgress = 1 - (beastAttackAnim / 15);
           if (atkProgress < 0.5) {
