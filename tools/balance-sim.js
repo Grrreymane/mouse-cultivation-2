@@ -133,6 +133,14 @@ function playerPolicy(E, sim, elapsed, towerDue) {
   if (s.autoCastUnlocked && !s.autoCast) E.toggleAutoCast();
   if (!LAZY) E.castSkill('sword_qi');
   if (!s.autoHealEnabled) E.toggleAutoHeal();
+  const PILLS = process.argv.includes('--pills');
+  if (PILLS) {
+    if (s.fortune && !process.argv.includes('--nofortune') && Math.random() < 0.5) E.claimFortune();
+    if (s.autoPillUnlocked && !(s.autoPills && s.autoPills.exp_pill)) E.setAutoPill('exp_pill', true);
+    if (s.autoPillUnlocked && s.realmIndex >= 2 && !(s.autoPills && s.autoPills.super_exp)) E.setAutoPill('super_exp', true);
+    if (s.materials.herb > 12 && (s.pills.exp_pill || 0) < 5) E.craftPill('exp_pill', 3);
+    if (s.realmIndex >= 2 && s.materials.essence > 6 && (s.pills.super_exp || 0) < 3) E.craftPill('super_exp', 1);
+  }
   if ((s.pills.heal_pill || 0) < 3) E.craftPill('heal_pill');
   if (s.needTribulation) {
     if ((s.pills.trib_pill || 0) < 1) E.craftPill('trib_pill');
