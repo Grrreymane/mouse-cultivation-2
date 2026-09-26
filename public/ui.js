@@ -1,654 +1,674 @@
 // ============================================================
-// ui.js — 鼠鼠修仙2 DOM UI 更新系统
-// 标签页渲染 / 状态面板 / 操作函数
+// ui.js — 鼠鼠修仙 v3 界面
+// HUD / 神通栏 / 修行指引 / 标签页 / 弹窗 / 提示
+// 只有内容变化时才重写 DOM，避免闪烁与滚动跳动
 // ============================================================
 
 const UI = (() => {
   'use strict';
 
-  let currentSkinFilter = 'all';
-  let lastGachaResults = null;
+  const $ = id => document.getElementById(id);
+  const fmt = n => GameEngine.formatNumber(n);
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
-  // ========== 标签页 ==========
+  let currentTab = 'status';
+  let codexSub = 'ach';
+  let skinFilter = 'all';
+  let lastPulls = null;
+  let logCollapsed = false;
+  const cache = {};
+  let lastTabRender = 0;
+
+  const SLOT_ICONS = { weapon: '⚔️', armor: '👘', accessory: '📿', boots: '👢' };
+  const MAT_NAMES = { herb: '灵药', ore: '矿石', essence: '精华' };
+  const MAT_ICONS = { herb: '🌿', ore: '⛏️', essence: '💎' };
+
+  const TABS = [
+    { id: 'status', icon: '🐭', name: '角色' },
+    { id: 'equip', icon: '⚔️', name: '装备', unlock: s => s.level >= 2 || s.inventory.length > 0 || EQUIP_ANY(s), lock: 'Lv.2' },
+    { id: 'skills', icon: '📜', name: '功法', unlock: s => s.level >= 2, lock: 'Lv.2' },
+    { id: 'pills', icon: '💊', name: '丹药', unlock: s => s.level >= 5, lock: 'Lv.5' },
+    { id: 'beasts', icon: '🐾', name: '灵兽', unlock: s => s.level >= 8 || s.beasts.length > 0, lock: 'Lv.8' },
+    { id: 'realm', icon: '🏔️', name: '历练', unlock: s => s.level >= 7, lock: 'Lv.7' },
+    { id: 'cave', icon: '🏠', name: '洞府', unlock: s => s.level >= 5, lock: 'Lv.5' },
+    { id: 'gacha', icon: '🎰', name: '天机阁', unlock: s => s.level >= 8 || s.tianjiTokens > 0 || s.totalGachaPulls > 0, lock: 'Lv.8' },
+    { id: 'ascend', icon: '🌟', name: '飞升', unlock: s => s.level >= 30 || s.ascensionCount > 0, lock: '元婴期' },
+    { id: 'codex', icon: '📖', name: '图录' },
+  ];
+  function EQUIP_ANY(s) { return ['weapon', 'armor', 'accessory', 'boots'].some(k => s.equipment[k]); }
+
+  function setHTML(el, html, key) {
+    if (!el) return false;
+    if (cache[key] === html) return false;
+    el.innerHTML = html;
+    cache[key] = html;
+    return true;
+  }
+
+  // ========== 提示 & 弹窗 ==========
+  function toast(text, cls) {
+    const box = $('toasts');
+    const el = document.createElement('div');
+    el.className = 'toast ' + (cls || '');
+    el.innerHTML = text;
+    box.appendChild(el);
+    while (box.children.length > 4) box.removeChild(box.firstChild);
+    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 400); }, 2800);
+  }
+
+  let modalButtons = [];
+  function modal(opts) {
+    $('modalTitle').innerHTML = opts.title || '';
+    $('modalBody').innerHTML = opts.html || '';
+    $('modal').classList.toggle('wide', !!opts.wide);
+    modalButtons = opts.buttons || [{ text: '好的', cls: 'gold' }];
+    $('modalActions').innerHTML = modalButtons.map((b, i) => `<button class="btn ${b.cls || ''}" data-action="modalBtn" data-i="${i}">${b.text}</button>`).join('');
+    $('modalMask').classList.add('on');
+    if (opts.onOpen) opts.onOpen();
+  }
+  function closeModal() { $('modalMask').classList.remove('on'); }
+  function modalButton(i) {
+    const b = modalButtons[i];
+    const keep = b && b.action ? b.action() === false : false;
+    if (!keep) closeModal();
+  }
+  function confirmBox(title, html, okText, onOk, okCls) {
+    modal({ title, html, buttons: [{ text: '取消' }, { text: okText || '确定', cls: okCls || 'gold', action: onOk }] });
+  }
+
+  // ========== 标签栏 ==========
   function initTabs() {
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
-        btn.classList.add('active');
-        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-        refreshCurrentTab();
-      });
-    });
+    $('tabs').innerHTML = TABS.map(t => `<button class="tab" data-action="tab" data-tab="${t.id}" id="tab-${t.id}"><span class="ti">${t.icon}</span><span>${t.name}</span></button>`).join('');
   }
 
-  function refreshCurrentTab() {
-    const t = document.querySelector('.tab-btn.active')?.dataset.tab;
-    if (t === 'equip') renderEquipTab();
-    else if (t === 'pills') renderPillsTab();
-    else if (t === 'skills') renderSkillsTab();
-    else if (t === 'beasts') renderBeastsTab();
-    else if (t === 'realm') renderRealmTab();
-    else if (t === 'cave') renderCaveTab();
-    else if (t === 'achieve') renderAchieveTab();
-    else if (t === 'bestiary') renderBestiaryTab();
-    else if (t === 'ascension') renderAscensionTab();
-    else if (t === 'gacha') renderGachaTab();
+  function tabDots(s) {
+    const dots = {};
+    dots.equip = s.inventory.some(it => GameEngine.getEquipPowerDelta(it) > 0);
+    dots.skills = GameEngine.SKILL_TREE.some(sk => s.realmIndex >= sk.realm && (s.skills[sk.id] || 0) < sk.maxLevel && s.gold >= GameEngine.getSkillCost(sk.id));
+    dots.realm = s.secretRealmCharges > 0 || (!s.towerDailyRewardClaimed && s.towerBestFloor > 0);
+    dots.cave = GameEngine.CAVE_BUILDINGS.some(b => s.level >= b.minLevel && (s.cave[b.id] || 0) < b.maxLevel && s.gold >= GameEngine.getCaveBuildingCost(b.id));
+    dots.gacha = s.tianjiTokens >= GameEngine.GACHA_COST_SINGLE;
+    dots.ascend = s.canAscend || GameEngine.ASCENSION_UPGRADES.some(u => (s.ascensionBonuses[u.id] || 0) < u.maxLevel && s.ascensionPoints >= GameEngine.getAscensionUpgradeCost(u, s.ascensionBonuses[u.id] || 0));
+    dots.pills = s.needTribulation && !(s.pills.trib_pill > 0);
+    return dots;
   }
 
-  // ========== 主UI更新 ==========
-  function updateUI() {
+  function updateTabs(s) {
+    const dots = tabDots(s);
+    for (const t of TABS) {
+      const el = $('tab-' + t.id);
+      if (!el) continue;
+      const unlocked = !t.unlock || t.unlock(s);
+      el.classList.toggle('locked', !unlocked);
+      el.classList.toggle('active', currentTab === t.id);
+      el.title = unlocked ? t.name : `${t.lock} 解锁`;
+      let dot = el.querySelector('.dot');
+      const want = unlocked && dots[t.id] && currentTab !== t.id;
+      if (want && !dot) { dot = document.createElement('i'); dot.className = 'dot'; el.appendChild(dot); }
+      if (!want && dot) dot.remove();
+    }
+  }
+
+  function switchTab(id) {
+    const s = GameEngine.getState();
+    const t = TABS.find(x => x.id === id);
+    if (!t) return;
+    if (t.unlock && !t.unlock(s)) { toast(`【${t.name}】${t.lock} 解锁`, 'red'); Sound.play('error'); return; }
+    currentTab = id;
+    $('tabBody').scrollTop = 0;
+    renderTab(true);
+    updateTabs(s);
+  }
+
+  // ========== 主刷新 ==========
+  function update(forceTab) {
     const s = GameEngine.getState();
     if (!s) return;
-    const fmt = GameEngine.formatNumber;
+    updateHeader(s);
+    updateHUD(s);
+    updateSkillBar(s);
+    updateQuest(s);
+    updateLog(s);
+    const now = performance.now();
+    if (forceTab || now - lastTabRender > 900) { lastTabRender = now; updateTabs(s); renderTab(false, s); }
+  }
+
+  let lastGold = 0;
+  function updateHeader(s) {
+    $('resGold').textContent = fmt(s.gold);
+    if (s.gold > lastGold) { const el = $('resGold').parentElement; el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
+    lastGold = s.gold;
+    $('resToken').textContent = fmt(s.tianjiTokens);
+    $('resHerb').textContent = fmt(s.materials.herb);
+    $('resOre').textContent = fmt(s.materials.ore);
+    $('resEssence').textContent = fmt(s.materials.essence);
+    document.querySelectorAll('#speedGroup button').forEach(b => b.classList.toggle('active', +b.dataset.v === s.battleSpeed));
+    $('soundBtn').textContent = Sound.isOn() ? '🔊' : '🔇';
+  }
+
+  function updateHUD(s) {
     const c = s.computed;
-
-    document.getElementById('level').textContent = `Lv.${s.level}`;
-    document.getElementById('realm').textContent = s.realm;
-    document.getElementById('realm').style.color = s.realmColor;
-    document.getElementById('expBar').style.width = s.expPercent + '%';
-    document.getElementById('expText').textContent = s.expPercent + '%';
-    document.getElementById('attack').textContent = fmt(c.attack);
-    document.getElementById('defense').textContent = fmt(c.defense);
-    document.getElementById('hp').textContent = `${fmt(s.hp)}/${fmt(c.maxHp)}`;
-    document.getElementById('critRate').textContent = c.critRate + '%';
-    document.getElementById('critDamage').textContent = c.critDamage + '%';
-    document.getElementById('lifesteal').textContent = c.lifesteal + '%';
-    document.getElementById('dodge').textContent = c.dodge + '%';
-    document.getElementById('dpsValue').textContent = fmt(s.dps);
-    document.getElementById('gold').textContent = fmt(s.gold);
-
-    // 前世天赋
-    const talentGroup = document.getElementById('talentGroup');
-    if (s.currentTalent) {
-      talentGroup.style.display = 'block';
-      const t = s.currentTalent;
-      document.getElementById('talentDisplay').innerHTML = `
-        <div style="font-size:11px;color:#FFD700;font-weight:bold;">${t.icon} ${t.name}</div>
-        <div style="font-size:9px;color:#aaa;margin:1px 0;">${t.desc}</div>
-        <div style="font-size:8px;color:#666;font-style:italic;">"${t.flavor}"</div>
-      `;
-    } else {
-      talentGroup.style.display = 'none';
-    }
-
-    document.getElementById('killCount').textContent = fmt(s.killCount);
-    document.getElementById('deathCount').textContent = s.deathCount;
-    document.getElementById('eliteKillCount').textContent = s.eliteKillCount;
-    document.getElementById('consecutiveKills').textContent = s.consecutiveKills;
-    document.getElementById('totalExp').textContent = fmt(s.totalExp);
-    document.getElementById('totalGold').textContent = fmt(s.totalGold);
-    document.getElementById('ascensionCountDisplay').textContent = s.ascensionCount;
-    document.getElementById('ascPointsDisplay').textContent = s.ascensionPoints;
-    document.getElementById('matHerb').textContent = s.materials.herb || 0;
-    document.getElementById('matOre').textContent = s.materials.ore || 0;
-    document.getElementById('matEssence').textContent = s.materials.essence || 0;
-    document.getElementById('tianjiDisplay').textContent = (s.tianjiTokens || 0) + ' 🎫';
-
-    const badge = document.getElementById('realmBadge');
-    badge.textContent = s.realm; badge.style.borderColor = s.realmColor; badge.style.color = s.realmColor;
-
-    // 死亡横幅
-    const deathBanner = document.getElementById('deathBanner');
-    if (s.isDead) { deathBanner.classList.add('active'); document.getElementById('reviveCountdown').textContent = s.reviveCountdown; }
-    else { deathBanner.classList.remove('active'); }
-
-    // 渡劫横幅
-    const tribBanner = document.getElementById('tribBanner');
-    if (s.needTribulation && !s.isDead) { tribBanner.classList.add('active'); document.getElementById('tribChance').textContent = Math.floor(s.tribChance * 100) + '%'; }
-    else { tribBanner.classList.remove('active'); }
-
-    // 连杀
-    const streak = document.getElementById('streakIndicator');
-    if (s.consecutiveKills >= 5) {
-      streak.classList.add('active');
-      streak.classList.toggle('hot', s.consecutiveKills >= 25 && s.consecutiveKills < 50);
-      streak.classList.toggle('fire', s.consecutiveKills >= 50);
-      const icons = s.consecutiveKills >= 50 ? '💀' : s.consecutiveKills >= 25 ? '⚡' : '🔥';
-      streak.textContent = `${icons} 连杀 x${s.consecutiveKills}`;
-    } else {
-      streak.classList.remove('active', 'hot', 'fire');
-    }
-
-    document.getElementById('dpsIndicator').textContent = `DPS: ${fmt(s.dps)}`;
-
-    // 自动吃药
-    document.getElementById('autoHealBtn').textContent = s.autoHealEnabled ? '✅ ON' : 'OFF';
-    document.getElementById('autoHealBtn').style.color = s.autoHealEnabled ? '#88ff88' : '#aaa';
+    const chip = $('hudRealm');
+    chip.textContent = s.realm; chip.style.color = s.realmColor;
+    $('hudLevel').textContent = 'Lv.' + s.level;
+    $('hudPower').textContent = fmt(s.power);
+    const expFull = s.needTribulation || s.level >= s.maxLevel;
+    $('hudExpFill').style.width = s.expPercent + '%';
+    $('hudExpFill').parentElement.classList.toggle('full', expFull);
+    $('hudExpText').textContent = expFull ? (s.needTribulation ? '修为圆满 · 待渡劫' : '大乘巅峰') : `修为 ${s.expPercent}%`;
+    const hpPct = Math.max(0, Math.min(100, s.hp / c.maxHp * 100));
+    $('hudHpFill').style.width = hpPct + '%';
+    $('hudHpFill').parentElement.classList.toggle('low', hpPct < 30);
+    $('hudHpText').textContent = `${fmt(s.hp)} / ${fmt(c.maxHp)}`;
+    $('hudScene').textContent = `· ${s.realmScene} ·`;
 
     // Buff
-    const buffBar = document.getElementById('buffBar');
-    let buffHtml = '';
-    const now = Date.now();
-    if (s.buffs.expBoost && now < s.buffs.expBoost.until) {
-      const sec = Math.ceil((s.buffs.expBoost.until - now)/1000);
-      buffHtml += `<span class="buff-tag">EXP x${s.buffs.expBoost.mult} (${sec}s)</span>`;
-    }
-    if (s.buffs.atkBoost && now < s.buffs.atkBoost.until) {
-      const sec = Math.ceil((s.buffs.atkBoost.until - now)/1000);
-      buffHtml += `<span class="buff-tag atk">ATK x${s.buffs.atkBoost.mult} (${sec}s)</span>`;
-    }
-    if (s.buffs.critBoost && now < s.buffs.critBoost.until) {
-      const sec = Math.ceil((s.buffs.critBoost.until - now)/1000);
-      buffHtml += `<span class="buff-tag crit">CRIT +${s.buffs.critBoost.value*100}% (${sec}s)</span>`;
-    }
-    if (s.autoHealEnabled) buffHtml += `<span class="buff-tag auto-heal">🩹自动(${s.pills?.heal_pill||0})</span>`;
-    if (s.playerDoTs && s.playerDoTs.length > 0) {
-      for (const dot of s.playerDoTs) buffHtml += `<span class="buff-tag dot">${dot.type==='poison'?'🟢毒':'🔥烧'} ${dot.ticksLeft}回合</span>`;
-    }
-    buffBar.innerHTML = buffHtml;
+    const now = Date.now(), b = [];
+    const sec = t => Math.max(0, Math.ceil((t - now) / 1000));
+    if (s.buffs.expBoost && s.buffs.expBoost.until > now) b.push(`<span class="buff good">修炼×${s.buffs.expBoost.mult} ${sec(s.buffs.expBoost.until)}s</span>`);
+    if (s.buffs.atkBoost && s.buffs.atkBoost.until > now) b.push(`<span class="buff good">攻击×${s.buffs.atkBoost.mult} ${sec(s.buffs.atkBoost.until)}s</span>`);
+    if (s.buffs.critBoost && s.buffs.critBoost.until > now) b.push(`<span class="buff good">暴击+${Math.round(s.buffs.critBoost.value * 100)}% ${sec(s.buffs.critBoost.until)}s</span>`);
+    if (s.buffs.tribBoost && s.buffs.tribBoost.until > now) b.push(`<span class="buff gold">渡劫+${Math.round(s.buffs.tribBoost.value * 100)}% ${sec(s.buffs.tribBoost.until)}s</span>`);
+    if (s.shield && s.shield.amount > 0) b.push(`<span class="buff gold">护盾 ${fmt(s.shield.amount)}</span>`);
+    for (const d of s.playerDoTs || []) b.push(`<span class="buff bad">${d.type === 'poison' ? '中毒' : '灼烧'} ${d.ticksLeft}</span>`);
+    if (s.autoHealEnabled) b.push(`<span class="buff">💚自动服药 ×${s.pills.heal_pill || 0}</span>`);
+    setHTML($('hudBuffs'), b.join(''), 'buffs');
 
-    // 日志
-    const logEl = document.getElementById('battleLog');
-    if (s.battleLog && s.battleLog.length > 0) {
-      logEl.innerHTML = s.battleLog.map(l => `<p>${l}</p>`).join('');
-      logEl.scrollTop = logEl.scrollHeight;
+    // 连斩
+    const st = $('hudStreak');
+    const k = s.consecutiveKills;
+    st.classList.toggle('on', k >= 5);
+    st.classList.toggle('hot', k >= 25 && k < 50);
+    st.classList.toggle('fire', k >= 50);
+    if (k >= 5) st.textContent = `${k >= 50 ? '💀' : k >= 25 ? '⚡' : '🔥'} ${k} 连斩`;
+
+    // 渡劫
+    const trib = $('tribCta');
+    const showTrib = s.needTribulation && !s.isDead && !Renderer.isTribulating();
+    trib.classList.toggle('on', showTrib);
+    if (showTrib) {
+      const next = GameEngine.REALMS[Math.min(5, s.realmIndex + 1)];
+      $('tribNext').textContent = next.name;
+      $('tribNext').style.color = next.color;
+      $('tribChance').textContent = Math.round(s.tribChance * 100) + '%';
+      $('tribBtn').disabled = s.tribCooldown > 0;
+      $('tribBtn').firstChild.textContent = s.tribCooldown > 0 ? `天劫余威 ${s.tribCooldown}s ` : '⚡ 渡 劫 ';
+      const tips = [];
+      if (!(s.buffs.tribBoost && s.buffs.tribBoost.until > now)) tips.push((s.pills.trib_pill || 0) > 0 ? '💊 先服用金元丹（+25%）' : '💊 炼制金元丹可+25%');
+      if (!s.activeBeastId) tips.push('🐾 灵兽出战+5%');
+      if (s.tribFailStreak > 0) tips.push(`道心+${s.tribFailStreak * 10}%`);
+      $('tribTip').textContent = tips.join(' · ') || '准备就绪，放手一搏！';
     }
 
-    refreshCurrentTab();
+    // 阵亡
+    $('deathOverlay').classList.toggle('on', !!s.isDead);
+    if (s.isDead) {
+      $('reviveCountdown').textContent = s.reviveCountdown;
+      $('deathTip').textContent = s.deathCount >= 3 ? '打不过？去【功法】修炼、【装备】换装强化、开启自动服药，或服用丹药再战。' : '';
+    }
   }
 
-  // ========== 装备页 ==========
-  function renderEquipTab() {
-    const s = GameEngine.getState(); if (!s) return;
-    const fmt = GameEngine.formatNumber;
-    const slotNames = GameEngine.EQUIP_SLOT_NAMES;
-    let html = '';
-    for (const slot of ['weapon','armor','accessory','boots']) {
-      const eq = s.equipment[slot];
-      if (eq) {
+  function updateSkillBar(s) {
+    const html = s.activeSkills.map(sk => {
+      const ready = sk.unlocked && sk.cooldown <= 0 && !s.isDead;
+      const cdPct = sk.unlocked && sk.cooldown > 0 ? Math.round(sk.cooldown / sk.cd * 100) : 0;
+      return `<button class="skill ${sk.unlocked ? (ready ? 'ready' : '') : 'locked'}" data-action="cast" data-id="${sk.id}" id="sk-${sk.id}" style="--sk:${sk.color}" title="${esc(sk.name)}：${esc(sk.desc)}（冷却${sk.cd}回合）">
+        <span class="ico">${sk.icon}</span><span class="nm">${sk.name}</span>
+        ${sk.unlocked && sk.cooldown > 0 ? `<i class="cd" style="height:${cdPct}%"></i><span class="cdn">${sk.cooldown}</span>` : ''}
+        ${!sk.unlocked ? `<span class="lock">Lv.${sk.unlockLevel}<br>领悟</span>` : ''}
+      </button>`;
+    }).join('') + `<button class="auto-toggle ${s.autoCast ? 'on' : ''} ${s.autoCastUnlocked ? '' : 'locked'}" data-action="autoCast" title="${s.autoCastUnlocked ? '自动施放神通' : '筑基期（Lv.10）解锁自动施放'}">${s.autoCastUnlocked ? (s.autoCast ? '自动<br>ON' : '自动<br>OFF') : '🔒<br>自动'}</button>`;
+    setHTML($('skillBar'), html, 'skillbar');
+  }
+
+  function flashSkill(id) {
+    const el = $('sk-' + id);
+    if (el) { el.classList.remove('cast'); void el.offsetWidth; el.classList.add('cast'); }
+  }
+
+  function updateQuest(s) {
+    const q = s.quest;
+    const el = $('questCard');
+    if (!q) { setHTML(el, '', 'quest'); return; }
+    el.classList.toggle('ready', q.done);
+    const prog = q.progressValue ? `<div class="q-prog"><i style="width:${Math.min(100, q.progressValue[0] / q.progressValue[1] * 100)}%"></i></div>` : '';
+    const html = `<div class="q-head">📜 修行指引<span class="q-idx">${q.index + 1}/${q.total}</span></div>
+      <div class="q-title">${q.title}</div>
+      <div class="q-desc">${q.desc}${q.progressValue ? `（${Math.min(q.progressValue[0], q.progressValue[1])}/${q.progressValue[1]}）` : ''}</div>
+      ${prog}
+      <div class="q-foot">🎁 ${q.rewardText}${q.done ? '<button class="btn gold sm" data-action="claimQuest">领取</button>' : ''}</div>`;
+    setHTML(el, html, 'quest');
+  }
+
+  function updateLog(s) {
+    const log = s.battleLog || [];
+    const key = log.length + '|' + (log[log.length - 1] || '');
+    if (cache.logKey === key) return;
+    cache.logKey = key;
+    const el = $('battleLog');
+    el.innerHTML = log.slice(-40).map(l => `<p>${l}</p>`).join('');
+    el.scrollTop = el.scrollHeight;
+    $('dpsValue').textContent = fmt(s.dps);
+  }
+
+  function toggleLog() {
+    logCollapsed = !logCollapsed;
+    $('logbox').classList.toggle('collapsed', logCollapsed);
+    $('logToggle').textContent = logCollapsed ? '展开' : '收起';
+    setTimeout(() => Renderer.resize(), 50);
+  }
+
+  // ========== 标签页渲染 ==========
+  function renderTab(force, s) {
+    s = s || GameEngine.getState();
+    if (force) delete cache['tab'];
+    const R = RENDER[currentTab];
+    if (!R) return;
+    const html = R(s);
+    const changed = setHTML($('tabBody'), html, 'tab');
+    if (changed && POST[currentTab]) POST[currentTab](s);
+    else if (POST_ALWAYS[currentTab]) POST_ALWAYS[currentTab](s);
+  }
+
+  const statRows = (c) => [
+    ['攻击', fmt(c.attack), 't-red'], ['防御', fmt(c.defense), 't-blue'],
+    ['生命', fmt(c.maxHp), 't-jade'], ['攻速', `+${c.atkSpeed}%`, ''],
+    ['暴击率', `${c.critRate}%`, 't-gold'], ['暴击伤害', `${c.critDamage}%`, 't-gold'],
+    ['闪避', `${c.dodge}%`, ''], ['吸血', `${c.lifesteal}%`, ''],
+    ['修炼加成', `+${c.expBonus}%`, 't-purple'], ['灵石加成', `+${c.goldBonus}%`, 't-orange'],
+    ['神通伤害', `+${c.skillDmg}%`, 't-blue'], ['', '', ''],
+  ];
+
+  function itemStatText(item) {
+    const enh = 1 + (item.enhanceLevel || 0) * 0.08;
+    const parts = [];
+    for (const [k, v] of Object.entries(item.baseAttr || {})) {
+      const val = ['attack', 'defense', 'maxHp'].includes(k) ? Math.floor(v * enh) : v;
+      parts.push(`${GameEngine.STAT_NAMES[k]} +${fmt(val)}${GameEngine.PERCENT_STATS.has(k) ? '%' : ''}`);
+    }
+    return parts.join('　');
+  }
+  function affixText(a, enhLevel) {
+    const name = GameEngine.STAT_NAMES[a.stat] || a.name;
+    if (a.type === 'percent') return `${name} +${a.value}%`;
+    const enh = ['attack', 'defense', 'maxHp'].includes(a.stat) ? 1 + (enhLevel || 0) * 0.08 : 1;
+    return `${name} +${fmt(Math.floor(a.value * enh))}${GameEngine.PERCENT_STATS.has(a.stat) ? '%' : ''}`;
+  }
+  function qualityLabel(q) { return GameEngine.EQUIP_QUALITIES[q].label; }
+
+  const RENDER = {
+    status(s) {
+      const c = s.computed;
+      const t = s.currentTalent;
+      const buffs = [];
+      const mountTxt = s.visualEquip.mount ? `${s.visualEquip.mount}（${s.visualEquip.mountStats}）` : '金丹期获得坐骑';
+      return `
+      <div class="hero">
+        <canvas id="heroCanvas" width="30" height="34"></canvas>
+        <div class="grow">
+          <div class="hero-name">鼠鼠 <span class="realm-chip" style="color:${s.realmColor};font-size:11px">${s.realm}</span></div>
+          <div class="muted">Lv.${s.level} · ${s.realmScene}${s.ascensionCount ? ` · 第${s.ascensionCount + 1}世` : ''}</div>
+          <div class="hero-power">战力 <b>${fmt(s.power)}</b></div>
+          ${t ? `<div class="small t-gold" style="margin-top:4px">${t.icon} 前世天赋·${t.name}：<span class="muted">${t.desc}</span></div>` : ''}
+        </div>
+      </div>
+      <div class="sec"><div class="sec-title">属性</div>
+        <div class="stat-grid">${statRows(c).filter(r => r[0]).map(([k, v, cls]) => `<div class="stat"><span>${k}</span><b class="${cls}">${v}</b></div>`).join('')}</div>
+        <div class="muted small" style="margin-top:6px">🐎 坐骑：${mountTxt}</div>
+      </div>
+      <div class="sec"><div class="sec-title">自动服药</div>
+        <div class="card row">
+          <button class="switch ${s.autoHealEnabled ? 'on' : ''}" data-action="autoHeal"></button>
+          <div class="grow">生命低于
+            <select data-change="healThreshold">${[20, 30, 40, 50, 60].map(v => `<option value="${v}" ${s.autoHealThreshold === v ? 'selected' : ''}>${v}%</option>`).join('')}</select>
+            时自动服用回元丹</div>
+          <span class="tag">持有 ${s.pills.heal_pill || 0}</span>
+        </div>
+      </div>
+      <div class="sec"><div class="sec-title">修行记录</div>
+        <div class="card kv">
+          <div>击杀 <b>${fmt(s.killCount)}</b></div><div>精英 <b>${fmt(s.eliteKillCount)}</b></div>
+          <div>陨落 <b>${s.deathCount}</b></div><div>最高连斩 <b>${s.consecutiveKills}</b></div>
+          <div>最高一击 <b>${fmt(s.stats.maxHit || 0)}</b></div><div>神通施放 <b>${fmt(s.stats.skillCasts || 0)}</b></div>
+          <div>累计灵石 <b>${fmt(s.totalGold)}</b></div><div>锁妖塔 <b>${s.towerBestFloor}层</b></div>
+          <div>飞升 <b>${s.ascensionCount}次</b></div><div>修行时长 <b>${Math.floor((s.stats.playTime || 0) / 60000)}分</b></div>
+        </div>
+      </div>`;
+    },
+
+    equip(s) {
+      const slots = ['weapon', 'armor', 'accessory', 'boots'].map(slot => {
+        const eq = s.equipment[slot];
+        if (!eq) return `<div class="card slot"><div class="slot-ico">${SLOT_ICONS[slot]}</div><div class="grow"><div class="item-name muted">${GameEngine.EQUIP_SLOT_NAMES[slot]} · 空</div><div class="muted small">击杀妖兽有概率掉落</div></div></div>`;
         const cost = GameEngine.getEquipEnhanceCost(eq);
-        html += `<div class="equip-slot-panel" onclick="Actions.doEnhance('${slot}')">
-          <span class="slot-label">${slotNames[slot]}</span>
-          <span class="equip-name" style="color:${eq.qualityColor}">${eq.name}</span>
-          <span class="enhance">${eq.enhanceLevel>0?'+'+eq.enhanceLevel:''}</span>
-          <span style="color:#666;font-size:8px">[${fmt(cost)}🪙]</span>
-        </div>`;
-      } else {
-        html += `<div class="equip-slot-panel"><span class="slot-label">${slotNames[slot]}</span><span style="color:#555">空</span></div>`;
-      }
-    }
-    document.getElementById('equippedSlots').innerHTML = html;
-    document.getElementById('invCount').textContent = s.inventory.length;
-    let invHtml = '';
-    s.inventory.forEach((eq, i) => {
-      const score = GameEngine.getEquipScore(eq);
-      const cmp = GameEngine.compareEquip(i);
-      let diffHtml = '';
-      if (cmp) {
-        if (cmp.diff > 0) diffHtml = `<span class="inv-diff up">▲${cmp.diff}</span>`;
-        else if (cmp.diff < 0) diffHtml = `<span class="inv-diff down">▼${Math.abs(cmp.diff)}</span>`;
-        else diffHtml = `<span class="inv-diff" style="color:#888">=</span>`;
-      }
-      invHtml += `<div class="inv-item">
-        <span class="inv-name" style="color:${eq.qualityColor}">${eq.name}[${slotNames[eq.slot]}]</span>
-        ${diffHtml}<span class="inv-score">${score}</span>
-        <button onclick="Actions.doEquip(${i})">装</button><button onclick="Actions.doSell(${i})">卖</button>
-      </div>`;
-    });
-    if (!s.inventory.length) invHtml = '<div style="color:#555;font-size:10px;padding:3px;">空空如也...</div>';
-    document.getElementById('inventoryList').innerHTML = invHtml;
-  }
-
-  // ========== 丹药页 ==========
-  function renderPillsTab() {
-    const s = GameEngine.getState(); if (!s) return;
-    const fmt = GameEngine.formatNumber;
-    let html = '';
-    for (const r of GameEngine.PILL_RECIPES) {
-      const locked = s.realmIndex < r.minRealm;
-      const matStr = Object.entries(r.materials).map(([k,v]) => {
-        const names = {herb:'🌿',ore:'⛏️',essence:'💎'}; const have = s.materials[k]||0;
-        return `<span style="color:${have>=v?'#88eeff':'#ff6b6b'}">${names[k]}${have}/${v}</span>`;
-      }).join(' ');
-      html += `<div class="card" ${locked?'style="opacity:0.4"':''}>
-        <div class="card-title">${r.icon} ${r.name}</div><div class="card-desc">${r.desc}</div>
-        <div class="card-info">${matStr} +${fmt(r.gold)}🪙</div>
-        <div class="card-actions"><button class="action-btn" onclick="Actions.doCraftPill('${r.id}')" ${locked?'disabled':''}>炼制</button></div>
-      </div>`;
-    }
-    document.getElementById('pillRecipes').innerHTML = html;
-    let pillsHtml = ''; let hasPills = false;
-    for (const r of GameEngine.PILL_RECIPES) {
-      const count = s.pills[r.id]||0;
-      if (count > 0) { hasPills = true;
-        pillsHtml += `<div class="card"><div class="card-title">${r.icon} ${r.name} x${count}</div>
-        <div class="card-actions"><button class="action-btn gold" onclick="Actions.doUsePill('${r.id}')">使用</button></div></div>`;
-      }
-    }
-    if (!hasPills) pillsHtml = '<div style="color:#555;font-size:10px;">暂无</div>';
-    document.getElementById('pillInventory').innerHTML = pillsHtml;
-  }
-
-  // ========== 功法页 ==========
-  function renderSkillsTab() {
-    const s = GameEngine.getState(); if (!s) return;
-    const fmt = GameEngine.formatNumber;
-    let html = '';
-    for (const sk of GameEngine.SKILL_TREE) {
-      const lv = s.skills[sk.id]||0; const locked = s.realmIndex < sk.realm;
-      const maxed = lv >= sk.maxLevel;
-      const goldCost = Math.floor(sk.cost * 200 * Math.pow(1 + lv, 1.5));
-      const canUp = !locked && !maxed && s.gold >= goldCost;
-      const canMax = !locked && !maxed;
-      html += `<div class="card" ${locked?'style="opacity:0.4"':''}>
-        <div class="card-title">${sk.icon} ${sk.name} ${locked?'(需'+GameEngine.REALMS[sk.realm].name+')':''}</div>
-        <div class="card-desc">${sk.desc}</div>
-        <div class="card-info">Lv.${lv}/${sk.maxLevel} | 费用:${fmt(goldCost)}🪙</div>
-        <div class="card-actions">
-          <button class="action-btn ${canUp?'gold':''}" onclick="Actions.doSkillUp('${sk.id}')" ${canUp?'':'disabled'}>${maxed?'满级':'升级'}</button>
-          ${!maxed && !locked ? `<button class="action-btn" style="border-color:#FF8800;color:#FF8800;" onclick="Actions.doMaxSkillUp('${sk.id}')" ${canMax && s.gold >= goldCost?'':'disabled'}>⚡加满</button>` : ''}
-        </div>
-      </div>`;
-    }
-    document.getElementById('skillTree').innerHTML = html;
-  }
-
-  // ========== 灵兽页 ==========
-  function renderBeastsTab() {
-    const s = GameEngine.getState(); if (!s) return;
-    const fmt = GameEngine.formatNumber;
-    if (!s.beasts || !s.beasts.length) { document.getElementById('beastList').innerHTML = ''; document.getElementById('noBeast').style.display = 'block'; return; }
-    document.getElementById('noBeast').style.display = 'none';
-    let html = '';
-    const mountName = s.visualEquip.mount;
-    if (mountName) {
-      const mountStats = mountName === '仙鹤' ? '闪避+5% 攻速+5%' : '攻击+15% 暴伤+20% 闪避+3%';
-      html += `<div class="card" style="border-color:#88CCFF;background:#1a1a3e;">
-        <div class="card-title">🐎 坐骑：${mountName}</div>
-        <div class="card-desc">属性加成：${mountStats}</div>
-        <div class="card-info" style="color:#88CCFF;">境界提升后自动升级坐骑</div>
-      </div>`;
-    } else {
-      html += `<div class="card" style="opacity:0.4;"><div class="card-title">🐎 坐骑：无</div><div class="card-desc" style="color:#666;">金丹期及以上自动获得坐骑</div></div>`;
-    }
-    for (const b of s.beasts) {
-      const isActive = b.id === s.activeBeastId;
-      const feedCost = Math.floor(50 * Math.pow(1.5, b.level));
-      html += `<div class="card" style="${isActive?'border-color:#ffdd57':''}">
-        <div class="card-title">${b.icon} ${b.name} Lv.${b.level} ${isActive?'⭐':''}</div>
-        <div class="card-desc">${b.skill}</div>
-        <div class="card-info">攻+${b.baseAtk} 防+${b.baseDef} | (${b.feedCount}/${b.level*3})</div>
-        <div class="card-actions">
-          <button class="action-btn gold" onclick="Actions.doFeedBeast('${b.id}')">喂(${fmt(feedCost)}🪙)</button>
-          <button class="action-btn" style="border-color:#FF8800;color:#FF8800;" onclick="Actions.doMaxFeedBeast('${b.id}')">⚡喂满</button>
-          ${isActive?'':`<button class="action-btn" onclick="Actions.doSetBeast('${b.id}')">出战</button>`}
-        </div>
-      </div>`;
-    }
-    document.getElementById('beastList').innerHTML = html;
-  }
-
-  // ========== 秘境/塔页 ==========
-  function renderRealmTab() {
-    const s = GameEngine.getState(); if (!s) return;
-    const fmt = GameEngine.formatNumber;
-    document.getElementById('realmCharges').textContent = s.secretRealmCharges;
-    document.getElementById('towerFloor').textContent = s.towerFloor;
-    document.getElementById('towerBest').textContent = s.towerBestFloor;
-    const milestones = GameEngine.TOWER_MILESTONES;
-    const nextMs = [10,20,30,40,50,60,70,80,90,100].find(f => f >= s.towerFloor);
-    document.getElementById('nextMilestone').textContent = nextMs ? `${nextMs}层 (${milestones[nextMs].name})` : '已全部达成';
-    let html = '';
-    GameEngine.SECRET_REALMS.forEach((r, i) => {
-      const locked = s.realmIndex < r.minRealm;
-      html += `<div class="realm-card ${locked?'locked':''}" onclick="${locked?'':'Actions.doEnterRealm('+i+')'}">
-        <div class="rc-name">${r.name} ${locked?'🔒':''}</div>
-        <div class="rc-desc">${r.desc}</div>
-        <div style="color:#FF8800;font-size:8px;margin-top:2px;">${locked?'':'🎲 5层探索·随机事件·BUFF加持'}</div>
-      </div>`;
-    });
-    document.getElementById('secretRealmList').innerHTML = html;
-    let msHtml = '<div style="font-size:9px;color:#888;margin-bottom:2px;">🏆 里程碑奖励：</div>';
-    for (const [floor, ms] of Object.entries(milestones)) {
-      const claimed = s.towerMilestones && s.towerMilestones[floor];
-      const reached = s.towerBestFloor >= parseInt(floor);
-      msHtml += `<div style="font-size:9px;color:${claimed?'#4a8a4a':reached?'#FFD700':'#444'};padding:1px 0;">
-        ${claimed?'✅':reached?'🏆':'🔒'} ${floor}层 - ${ms.name}${claimed?' (已领取)':''}: <span style="color:#aaa;">${ms.desc}</span>
-      </div>`;
-    }
-    document.getElementById('towerMilestoneList').innerHTML = msHtml;
-  }
-
-  // ========== 洞府页 ==========
-  function renderCaveTab() {
-    const s = GameEngine.getState(); if (!s) return;
-    const fmt = GameEngine.formatNumber;
-    let html = '';
-    for (const b of GameEngine.CAVE_BUILDINGS) {
-      const lv = s.cave[b.id] || 0;
-      const maxed = lv >= b.maxLevel;
-      const cost = GameEngine.getCaveBuildingCost(b.id);
-      const canUp = !maxed && s.gold >= cost;
-      const eff = b.effect(lv);
-      const effStr = Object.entries(eff).map(([k,v]) => {
-        const names = {herb_per_min:'灵药/分',ore_per_min:'矿石/分',exp_bonus_pct:'修炼+%',pill_mat_reduce_pct:'材料-%',all_stat_bonus_pct:'全属性+%'};
-        return `${names[k]||k}: ${v}`;
-      }).join(' | ');
-      html += `<div class="cave-card">
-        <div class="cave-icon">${b.icon}</div>
-        <div class="cave-info">
-          <div class="cave-name">${b.name} Lv.${lv}/${b.maxLevel}</div>
-          <div class="cave-desc">${b.desc}</div>
-          <div class="cave-effect">${lv > 0 ? effStr : '未建造'}</div>
-        </div>
-        <div style="display:flex;gap:3px;flex-direction:column;">
-          <button class="action-btn ${canUp?'gold':''}" onclick="Actions.doCaveUpgrade('${b.id}')" ${maxed||!canUp?'disabled':''}>${maxed ? '满级' : fmt(cost)+'🪙'}</button>
-          ${!maxed ? `<button class="action-btn" style="border-color:#FF8800;color:#FF8800;font-size:9px;padding:2px 4px;" onclick="Actions.doMaxCaveUpgrade('${b.id}')" ${!canUp?'disabled':''}>⚡加满</button>` : ''}
-        </div>
-      </div>`;
-    }
-    document.getElementById('caveList').innerHTML = html;
-  }
-
-  // ========== 成就页 ==========
-  function renderAchieveTab() {
-    const s = GameEngine.getState(); if (!s) return;
-    const unlocked = Object.keys(s.achievements).length;
-    document.getElementById('achCount').textContent = ` (${unlocked}/${GameEngine.ACHIEVEMENTS.length})`;
-    let html = '';
-    for (const ach of GameEngine.ACHIEVEMENTS) {
-      const done = s.achievements[ach.id];
-      const rewardStr = Object.entries(ach.reward).map(([k,v]) => `${k}+${v}`).join(' ');
-      html += `<div class="ach-card ${done?'unlocked':'locked'}">
-        <div class="ach-icon">${ach.icon}</div>
-        <div class="ach-info">
-          <div class="ach-name">${ach.name} ${done?'✅':''}</div>
-          <div class="ach-desc">${ach.desc}</div>
-          <div class="ach-reward">${done?'已获得: ':''} ${rewardStr}</div>
-        </div>
-      </div>`;
-    }
-    document.getElementById('achieveList').innerHTML = html;
-  }
-
-  // ========== 图鉴页 ==========
-  function renderBestiaryTab() {
-    const bestiary = GameEngine.getMonsterBestiary();
-    const discovered = bestiary.filter(b => b.discovered).length;
-    document.getElementById('bestiaryCount').textContent = ` (${discovered}/${bestiary.length})`;
-    const traitNames = {poison:'🟢毒',dodge:'💨闪避',thorns:'🌿荆棘',berserk:'🔴狂暴',slow:'❄️减速',burn:'🔥灼烧',critBoost:'💥会心',lifesteal:'🩸吸血',charm:'💜魅惑'};
-    const fmt = GameEngine.formatNumber;
-    let html = '';
-    let lastRealm = '';
-    const canvasItems = [];
-    for (const m of bestiary) {
-      if (m.realm !== lastRealm) {
-        lastRealm = m.realm;
-        html += `<div style="color:#888;font-size:9px;margin-top:6px;padding:2px 0;border-bottom:1px solid #2a2a5a;">— ${m.realm} —</div>`;
-      }
-      const cls = m.discovered ? 'discovered' : 'undiscovered';
-      const canvasId = `bc-canvas-${m.name.replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g,'_')}`;
-      html += `<div class="bestiary-card ${cls}">
-        <div class="bc-sprite">${m.discovered
-          ? `<canvas id="${canvasId}" width="48" height="48" style="width:48px;height:48px;image-rendering:pixelated;"></canvas>`
-          : `<div style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;color:#555;font-size:20px;background:#111;border-radius:4px;">?</div>`
-        }</div>
-        <div style="flex:1;min-width:0;">
-          <span style="font-weight:bold;${m.discovered?'':'color:#555;'}">${m.discovered ? m.name : '???'}</span>
-          ${m.discovered ? `<span class="bc-trait">${traitNames[m.trait]||''}</span>` : ''}
-          ${m.discovered ? `<div style="color:#666;font-size:9px;">HP:${fmt(m.hp)} ATK:${fmt(m.atk)} EXP:${fmt(m.exp)} 🪙:${fmt(m.gold)}</div>` : ''}
-        </div>
-        <div class="bc-kills">${m.discovered ? `×${fmt(m.kills)}` : ''}</div>
-      </div>`;
-      if (m.discovered) canvasItems.push({ id: canvasId, name: m.name, tier: m.tier });
-    }
-    document.getElementById('bestiaryList').innerHTML = html;
-    requestAnimationFrame(() => {
-      for (const item of canvasItems) {
-        const cvs = document.getElementById(item.id);
-        if (!cvs) continue;
-        const cctx = cvs.getContext('2d');
-        cctx.clearRect(0, 0, 48, 48);
-        // SpriteSheet 通过 SpriteRenderer 的 SCALE_RATIO(0.75) 缩放
-        // 为在 48×48 小 canvas 中适当填充：48 * scale * 0.75 ≈ 40px → scale ≈ 1.1
-        // Fallback Canvas 绘制: 角色约 13*scale px → scale=1.1 → 14px（偏小但可接受）
-        const scale = item.tier <= 1 ? 1.2 : item.tier <= 3 ? 1.1 : 1.0;
-        Sprites.drawMonsterByName(cctx, item.name, 24, 38, scale, 0, 0);
-      }
-    });
-  }
-
-  // ========== 转生页 ==========
-  function renderAscensionTab() {
-    const s = GameEngine.getState(); if (!s) return;
-    const fmt = GameEngine.formatNumber;
-    document.getElementById('ascCount').textContent = s.ascensionCount;
-    document.getElementById('ascPoints').textContent = s.ascensionPoints;
-    const canAsc = s.canAscend;
-    const btn = document.getElementById('ascendBtn');
-    btn.disabled = !canAsc;
-    if (canAsc) {
-      btn.textContent = `🌟 飞升（获得${s.ascensionPointsPreview}仙缘点）`;
-      btn.style.borderColor = '#FFD700'; btn.style.color = '#FFD700';
-      document.getElementById('ascPreview').innerHTML = `<span style="color:#FFD700;">✅ 已达Lv.${s.level}，可以飞升！</span><br><span style="color:#888;">飞升将重置等级/装备/材料，保留灵兽/成就/图鉴/10%灵石</span>`;
-    } else {
-      btn.textContent = '🌟 飞升（需Lv.50+）';
-      btn.style.borderColor = '#555'; btn.style.color = '#666';
-      document.getElementById('ascPreview').innerHTML = `<span style="color:#888;">达到大乘期（Lv.50）即可飞升转生</span>`;
-    }
-    let html = '';
-    for (const u of GameEngine.ASCENSION_UPGRADES) {
-      const lv = s.ascensionBonuses[u.id] || 0;
-      const maxed = lv >= u.maxLevel;
-      const cost = u.cost * (1 + Math.floor(lv / 3));
-      const canBuy = !maxed && s.ascensionPoints >= cost;
-      html += `<div class="asc-card">
-        <div class="asc-icon">${u.icon}</div>
-        <div class="asc-info">
-          <div class="asc-name">${u.name} Lv.${lv}/${u.maxLevel}</div>
-          <div class="asc-desc">${u.desc}</div>
-          <div class="asc-level">${maxed ? '已满级' : `当前：+${lv * u.perLevel}${u.id==='startLevel'?'级':'%'} | 费用：${cost}仙缘`}</div>
-        </div>
-        <button class="action-btn ${canBuy?'gold':''}" onclick="Actions.doAscUpgrade('${u.id}')" ${canBuy?'':'disabled'}>${maxed ? '满' : '升'}</button>
-      </div>`;
-    }
-    document.getElementById('ascUpgradeList').innerHTML = html;
-
-    // 天赋图鉴
-    let talentHtml = '';
-    const allTalents = GameEngine.PAST_LIFE_TALENTS;
-    const currentId = s.currentTalentId;
-    const owned = s.pastLifeTalents || [];
-    document.getElementById('talentOwnedCount').textContent = owned.length;
-    if (owned.length > 0 || s.currentTalent) {
-      for (const t of allTalents) {
-        const isOwned = owned.includes(t.id);
-        const isCurrent = t.id === currentId;
-        const cls = isCurrent ? 'border-color:#FFD700;background:#2a2a3e;' : isOwned ? 'border-color:#4a8a4a;opacity:0.7;' : 'opacity:0.2;';
-        talentHtml += `<div class="asc-card" style="${cls}">
-          <div class="asc-icon" style="font-size:16px;">${t.icon}</div>
-          <div class="asc-info">
-            <div class="asc-name" style="color:${isCurrent?'#FFD700':'#aaa'};">${t.name}${isCurrent?' ⭐当前':''}</div>
-            <div class="asc-desc">${t.desc}</div>
-            <div style="font-size:8px;color:#666;font-style:italic;">${isOwned ? `"${t.flavor}"` : '???'}</div>
+        const maxed = eq.enhanceLevel >= 15;
+        return `<div class="card slot">
+          <div class="slot-ico" style="--qc:${eq.qualityColor}">${SLOT_ICONS[slot]}</div>
+          <div class="grow">
+            <div class="item-name" style="color:${eq.qualityColor}">${eq.name}<span class="enh">${eq.enhanceLevel ? '+' + eq.enhanceLevel : ''}</span></div>
+            <div class="muted small">${qualityLabel(eq.qualityIdx)} · Lv.${eq.level} · ${itemStatText(eq)}</div>
+            <div class="affix-list">${eq.affixes.map(a => `<span class="affix">◆ ${affixText(a, eq.enhanceLevel)}</span>`).join('')}</div>
           </div>
+          <button class="btn sm ${!maxed && s.gold >= cost ? 'gold' : ''}" data-action="enhance" data-slot="${slot}" ${maxed || s.gold < cost ? 'disabled' : ''}>${maxed ? '已满' : `强化<span class="cost">${fmt(cost)}</span>`}</button>
         </div>`;
-      }
-    } else {
-      talentHtml = '<div style="color:#555;font-size:10px;padding:4px;">飞升后将随机觉醒前世天赋</div>';
-    }
-    document.getElementById('talentHistory').innerHTML = talentHtml;
-  }
+      }).join('');
+      const items = s.inventory.map(it => ({ it, d: GameEngine.getEquipPowerDelta(it) }));
+      items.sort((a, b) => (b.d > 0) - (a.d > 0) || b.it.qualityIdx - a.it.qualityIdx || b.d - a.d);
+      const inv = items.map(({ it, d }) => `
+        <div class="inv-item ${d > 0 ? 'better' : ''}" style="--qc:${it.qualityColor}">
+          <div class="grow">
+            <div><b style="color:${it.qualityColor}">${it.name}</b> <span class="tag">${GameEngine.EQUIP_SLOT_NAMES[it.slot]}</span> <span class="tag">${qualityLabel(it.qualityIdx)}</span> <span class="muted small">Lv.${it.level}</span></div>
+            <div class="muted small">${itemStatText(it)}${it.affixes.length ? '　' + it.affixes.map(a => affixText(a, 0)).join('　') : ''}</div>
+          </div>
+          <div class="small ${d > 0 ? 'delta-up' : 'delta-down'}" title="装备后战力变化">${d > 0 ? '▲' + fmt(d) : d < 0 ? '▼' + fmt(-d) : '='}</div>
+          <button class="btn sm ${d > 0 ? 'jade' : ''}" data-action="equip" data-id="${it.id}">装备</button>
+          <button class="btn sm ghost" data-action="sell" data-id="${it.id}" title="出售 ${fmt(GameEngine.getEquipSellPrice(it))} 灵石">卖</button>
+        </div>`).join('');
+      return `
+      <div class="sec"><div class="sec-title">已装备<span class="btns"><button class="btn sm gold" data-action="autoEquip">⚡一键换装</button></span></div>${slots}
+        <div class="hint">强化每级 +8% 基础属性与固定词条，最高 +15</div></div>
+      <div class="sec"><div class="sec-title">背包<span class="extra">${s.inventory.length}/${s.inventoryMax}</span><span class="btns"><button class="btn sm red" data-action="sellWeaker">出售弱装</button></span></div>
+        ${inv || '<div class="hint">空空如也，打怪掉落装备吧</div>'}
+      </div>`;
+    },
 
-  // ========== 天机阁页 ==========
-  function renderGachaTab() {
-    const s = GameEngine.getState(); if (!s) return;
-    document.getElementById('gachaTokens').textContent = s.tianjiTokens;
-    document.getElementById('totalPulls').textContent = s.totalGachaPulls;
-    document.getElementById('skinCount').textContent = s.ownedSkins.length;
-    document.getElementById('skinTotal').textContent = GameEngine.GACHA_POOL.length;
+    skills(s) {
+      const actives = s.activeSkills.map(sk => `
+        <div class="card row ${sk.unlocked ? '' : 'dim'}">
+          <div class="skill-ico">${sk.icon}</div>
+          <div class="grow"><b>${sk.name}</b> <span class="tag">冷却 ${sk.cd} 回合</span>
+            <div class="muted small">${sk.desc}</div></div>
+          <span class="tag">${sk.unlocked ? '已领悟' : 'Lv.' + sk.unlockLevel}</span>
+        </div>`).join('');
+      const skills = GameEngine.SKILL_TREE.map(sk => {
+        const lv = s.skills[sk.id] || 0;
+        const locked = s.realmIndex < sk.realm;
+        const maxed = lv >= sk.maxLevel;
+        const cost = GameEngine.getSkillCost(sk.id);
+        const can = !locked && !maxed && s.gold >= cost;
+        const total = sk.effect.perLevel * lv;
+        const unit = sk.effect.type === 'percent' || GameEngine.PERCENT_STATS.has(sk.effect.stat) ? '%' : '';
+        return `<div class="card skill-card ${locked ? 'dim' : ''}">
+          <div class="row">
+            <div class="skill-ico">${sk.icon}</div>
+            <div class="grow">
+              <div><b>${sk.name}</b> <span class="lv-pips">${lv}/${sk.maxLevel}</span>${locked ? ` <span class="tag">需${GameEngine.REALMS[sk.realm].name}</span>` : ''}</div>
+              <div class="muted small">${sk.desc}${lv ? ` · 当前 <span class="t-jade">+${Math.round(total * 10) / 10}${unit}</span>` : ''}</div>
+              <div class="prog jade" style="margin-top:5px"><i style="width:${lv / sk.maxLevel * 100}%"></i></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <button class="btn sm ${can ? 'gold' : ''}" data-action="skillUp" data-id="${sk.id}" ${can ? '' : 'disabled'}>${maxed ? '圆满' : `修炼<span class="cost">${fmt(cost)}</span>`}</button>
+              ${!maxed && !locked ? `<button class="btn sm" data-action="skillMax" data-id="${sk.id}" ${can ? '' : 'disabled'}>连升</button>` : ''}
+            </div>
+          </div></div>`;
+      }).join('');
+      return `<div class="sec"><div class="sec-title">神通<span class="extra">${s.autoCastUnlocked ? '可在战斗画面开启自动施放' : '筑基期解锁自动施放'}</span></div>${actives}</div>
+        <div class="sec"><div class="sec-title">功法<span class="extra">消耗灵石修炼，永久提升</span></div>${skills}</div>`;
+    },
 
-    // 当前装备外观
-    let equippedHtml = '';
-    const equippedCanvasItems = [];
-    const wSkin = s.equippedWeaponSkin ? GameEngine.GACHA_POOL.find(p => p.id === s.equippedWeaponSkin) : null;
-    const aSkin = s.equippedArmorSkin ? GameEngine.GACHA_POOL.find(p => p.id === s.equippedArmorSkin) : null;
-    const realmIdx = Math.min(Math.floor((s.level - 1) / 10), 5);
+    pills(s) {
+      const cards = GameEngine.PILL_RECIPES.map(r => {
+        const locked = s.realmIndex < r.minRealm;
+        const cost = GameEngine.getPillCost(r);
+        const mats = Object.entries(cost.materials).map(([k, v]) => {
+          const have = s.materials[k] || 0;
+          return `<span class="tag" style="color:${have >= v ? '#bfe8ff' : '#ff8a9a'}">${MAT_ICONS[k]} ${fmt(have)}/${v}</span>`;
+        }).join(' ');
+        const canCraft = !locked && s.gold >= cost.gold && Object.entries(cost.materials).every(([k, v]) => (s.materials[k] || 0) >= v);
+        const own = s.pills[r.id] || 0;
+        return `<div class="card ${locked ? 'dim' : ''}">
+          <div class="row">
+            <div class="skill-ico">${r.icon}</div>
+            <div class="grow"><b>${r.name}</b> ${own ? `<span class="tag t-gold">持有 ${own}</span>` : ''}${locked ? ` <span class="tag">需${GameEngine.REALMS[r.minRealm].name}</span>` : ''}
+              <div class="muted small">${r.desc}</div>
+              <div style="margin-top:4px">${mats} <span class="tag" style="color:${s.gold >= cost.gold ? '#ffdf8a' : '#ff8a9a'}">🪙 ${fmt(cost.gold)}</span></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <button class="btn sm ${canCraft ? 'gold' : ''}" data-action="craft" data-id="${r.id}" ${canCraft ? '' : 'disabled'}>炼制</button>
+              <button class="btn sm" data-action="craft5" data-id="${r.id}" ${canCraft ? '' : 'disabled'}>×5</button>
+              ${own ? `<button class="btn sm jade" data-action="usePill" data-id="${r.id}">服用</button>` : ''}
+            </div>
+          </div></div>`;
+      }).join('');
+      const forge = s.cave.forge_room || 0;
+      return `<div class="sec"><div class="sec-title">炼丹房<span class="extra">${forge ? `炼丹室减免材料 ${forge * 10}%` : '材料来自打怪/秘境/洞府'}</span></div>${cards}</div>`;
+    },
 
-    equippedHtml += `<div class="skin-card equipped">
-      <div class="skin-preview">${wSkin
-        ? `<canvas id="eq-weapon-cvs" width="40" height="40" style="width:40px;height:40px;image-rendering:pixelated;"></canvas>`
-        : `<div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;color:#555;font-size:14px;">⚔️</div>`
-      }</div>
-      <span style="color:#888;min-width:32px;">⚔️武器</span>
-      <span style="flex:1;${wSkin ? 'color:'+GameEngine.GACHA_QUALITY_COLORS[wSkin.quality] : 'color:#555'}">${wSkin ? wSkin.name : '默认外观'}</span>
-      ${wSkin ? `<button class="action-btn" onclick="Actions.doUnequipSkin('weapon')" style="padding:1px 5px;font-size:8px;">卸下</button>` : ''}
-    </div>`;
-    if (wSkin) equippedCanvasItems.push({ id: 'eq-weapon-cvs', skinId: wSkin.id, type: 'weapon' });
-
-    equippedHtml += `<div class="skin-card equipped">
-      <div class="skin-preview">${aSkin
-        ? `<canvas id="eq-armor-cvs" width="40" height="40" style="width:40px;height:40px;image-rendering:pixelated;"></canvas>`
-        : `<div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;color:#555;font-size:14px;">👘</div>`
-      }</div>
-      <span style="color:#888;min-width:32px;">👘衣服</span>
-      <span style="flex:1;${aSkin ? 'color:'+GameEngine.GACHA_QUALITY_COLORS[aSkin.quality] : 'color:#555'}">${aSkin ? aSkin.name : '默认外观'}</span>
-      ${aSkin ? `<button class="action-btn" onclick="Actions.doUnequipSkin('armor')" style="padding:1px 5px;font-size:8px;">卸下</button>` : ''}
-    </div>`;
-    if (aSkin) equippedCanvasItems.push({ id: 'eq-armor-cvs', skinId: aSkin.id, type: 'armor' });
-    document.getElementById('equippedSkins').innerHTML = equippedHtml;
-
-    if (equippedCanvasItems.length > 0) {
-      requestAnimationFrame(() => {
-        for (const item of equippedCanvasItems) {
-          const cvs = document.getElementById(item.id);
-          if (!cvs) continue;
-          const cctx = cvs.getContext('2d');
-          cctx.clearRect(0, 0, 40, 40);
-          if (item.type === 'weapon') Sprites.drawWeaponWithSkin(cctx, 20, 34, 1.8, realmIdx, 0, 0, item.skinId);
-          else Sprites.drawMouseByRealm(cctx, 20, 30, 1.2, realmIdx, 0, 0, { equippedArmorSkin: item.skinId });
+    beasts(s) {
+      const mount = s.visualEquip.mount;
+      const mountCard = `<div class="card row ${mount ? 'hl' : 'dim'}">
+        <canvas class="portrait" id="mountCanvas" width="44" height="36" style="width:66px;height:54px"></canvas>
+        <div class="grow"><b>🐎 坐骑：${mount || '未获得'}</b><div class="muted small">${mount ? s.visualEquip.mountStats : '金丹期自动获得仙鹤，化神期获得麒麟'}</div></div></div>`;
+      const cards = GameEngine.BEAST_TEMPLATES.map(t => {
+        const b = s.beasts.find(x => x.templateId === t.id);
+        if (!b) {
+          return `<div class="card row dim"><canvas class="portrait beast-cv" data-name="${t.id}" data-sil="1" width="32" height="28" style="width:64px;height:56px"></canvas>
+            <div class="grow"><b>???</b><div class="muted small">${GameEngine.REALMS[t.minRealm].name}起，击杀妖兽时有概率遇到</div></div></div>`;
         }
-      });
-    }
-
-    // 抽卡结果
-    if (lastGachaResults) {
-      document.getElementById('gachaResultArea').style.display = 'block';
-      let rHtml = '';
-      const gachaCanvasItems = [];
-      for (let ri = 0; ri < lastGachaResults.length; ri++) {
-        const r = lastGachaResults[ri];
-        const qColor = r.isEquip ? (r.qualityColor || '#CCCCCC') : GameEngine.GACHA_QUALITY_COLORS[r.quality];
-        const qName = r.isEquip ? '装备' : GameEngine.GACHA_QUALITY_NAMES[r.quality];
-        const cls = r.duplicate ? 'gacha-result-card duplicate' : 'gacha-result-card new';
-        const tag = r.isEquip ? '⚔️' : (r.type === 'weapon' ? '🗡️' : '👘');
-        const grCanvasId = `gr-cvs-${ri}`;
-        const showPreview = !r.isEquip && r.id;
-        rHtml += `<div class="${cls}" style="border-color:${qColor}20;">
-          ${showPreview ? `<div class="gr-preview"><canvas id="${grCanvasId}" width="36" height="36" style="width:36px;height:36px;image-rendering:pixelated;"></canvas></div>` : ''}
-          <span class="gacha-quality" style="background:${qColor};">${qName}</span>
-          <span class="gacha-tag">${tag}</span>
-          <div style="flex:1;">
-            <span class="gacha-name" style="color:${qColor};">${r.name}</span>
-            ${r.isNew && !r.isEquip ? '<span style="color:#FFD700;font-size:8px;"> ✨NEW!</span>' : ''}
-            ${r.isEquip ? `<span style="color:#aaa;font-size:8px;"> ${r.desc}</span>` : ''}
-            ${r.duplicate && !r.isEquip ? `<span style="color:#888;font-size:8px;"> 🔄+${r.refund}令</span>` : ''}
+        const bb = GameEngine.beastBonus(b);
+        const active = s.activeBeastId === b.id;
+        const cost = GameEngine.getBeastFeedCost(b.id);
+        const capped = b.level >= s.level + 5;
+        const can = !capped && s.gold >= cost;
+        return `<div class="card ${active ? 'hl' : ''}"><div class="row">
+          <canvas class="portrait beast-cv" data-name="${t.id}" width="32" height="28" style="width:64px;height:56px"></canvas>
+          <div class="grow">
+            <div><b>${t.name}</b> <span class="lv-pips">Lv.${b.level}</span> ${active ? '<span class="tag t-gold">出战中</span>' : ''}</div>
+            <div class="small t-purple">${t.skill}</div>
+            <div class="muted small">攻击+${Math.round(bb.atkPct)}% 防御+${Math.round(bb.defPct)}% · 协战 ${Math.round(bb.dmgMult * 100)}%攻击</div>
           </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <button class="btn sm ${can ? 'gold' : ''}" data-action="feed" data-id="${b.id}" ${can ? '' : 'disabled'}>${capped ? '需鼠鼠升级' : `喂养<span class="cost">${fmt(cost)}</span>`}</button>
+            <button class="btn sm" data-action="feedMax" data-id="${b.id}" ${can ? '' : 'disabled'}>连喂</button>
+            ${active ? '' : `<button class="btn sm jade" data-action="setBeast" data-id="${b.id}">出战</button>`}
+          </div></div></div>`;
+      }).join('');
+      return `<div class="sec"><div class="sec-title">坐骑</div>${mountCard}</div>
+        <div class="sec"><div class="sec-title">灵兽<span class="extra">${s.beasts.length}/6 · 出战灵兽提供加成并协助攻击</span></div>${cards}</div>`;
+    },
+
+    realm(s) {
+      const cd = s.realmChargeCountdown;
+      const mm = Math.floor(cd / 60000), ss = Math.floor(cd % 60000 / 1000);
+      const realms = GameEngine.SECRET_REALMS.map((r, i) => {
+        const locked = s.realmIndex < r.minRealm;
+        const rw = Object.keys(r.rewards).filter(k => MAT_NAMES[k]).map(k => MAT_NAMES[k]).join('、');
+        return `<div class="card row ${locked ? 'dim' : ''}">
+          <div class="grow"><b class="t-gold">${r.name}</b> ${locked ? `<span class="tag">需${GameEngine.REALMS[r.minRealm].name}</span>` : ''}
+            <div class="muted small">${r.desc} · 产出${rw}${r.rewards.beastChance ? '、灵兽机缘' : ''}${r.rewards.equipQualityMin ? '、高品质装备' : ''}</div></div>
+          <button class="btn sm ${!locked && s.secretRealmCharges > 0 ? 'gold' : ''}" data-action="enterRealm" data-i="${i}" ${locked || s.secretRealmCharges <= 0 ? 'disabled' : ''}>探索</button>
         </div>`;
-        if (showPreview) gachaCanvasItems.push({ id: grCanvasId, skinId: r.id, type: r.type });
-      }
-      document.getElementById('gachaResults').innerHTML = rHtml;
-      if (gachaCanvasItems.length > 0) {
-        requestAnimationFrame(() => {
-          const realmIndex = s ? Math.min(Math.floor((s.level - 1) / 10), 5) : 0;
-          for (const item of gachaCanvasItems) {
-            const cvs = document.getElementById(item.id);
-            if (!cvs) continue;
-            const cctx = cvs.getContext('2d');
-            cctx.clearRect(0, 0, 36, 36);
-            if (item.type === 'weapon') Sprites.drawWeaponWithSkin(cctx, 18, 30, 1.5, realmIndex, 0, 0, item.skinId);
-            else Sprites.drawMouseByRealm(cctx, 18, 27, 1.0, realmIndex, 0, 0, { equippedArmorSkin: item.skinId });
-          }
-        });
-      }
-    } else {
-      document.getElementById('gachaResultArea').style.display = 'none';
-    }
+      }).join('');
+      const mon = GameEngine.getTowerMonster(s.towerFloor);
+      const msList = Object.entries(GameEngine.TOWER_MILESTONES).map(([f, ms]) => {
+        const done = s.towerMilestones[f];
+        return `<div class="small" style="color:${done ? '#6a8a6a' : s.towerFloor <= f ? '#c8bfd6' : '#6f6680'};padding:2px 0">${done ? '✅' : '🏆'} ${f}层 ${ms.name}：<span class="muted">${GameEngine.describeMilestone(+f)}</span></div>`;
+      }).join('');
+      return `<div class="sec"><div class="sec-title">秘境探索<span class="extra">次数 ${s.secretRealmCharges}/${s.realmMaxCharges}${cd > 0 ? ` · ${mm}:${String(ss).padStart(2, '0')}后+1` : ''}</span></div>
+          <div class="hint" style="margin-bottom:6px">五层随机事件：战斗、宝箱、陷阱、灵泉、奇遇，最终层守关BOSS必掉装备</div>${realms}</div>
+        <div class="sec"><div class="sec-title">锁妖塔<span class="extra">最高 ${s.towerBestFloor} 层</span></div>
+          <div class="card hl row">
+            <canvas class="portrait" id="towerCanvas" width="40" height="40" style="width:60px;height:60px"></canvas>
+            <div class="grow"><div><b>第 ${s.towerFloor} 层</b> ${mon.isBoss ? '<span class="tag t-red">BOSS</span>' : ''}</div>
+              <div class="muted small">守关：${mon.name}（Lv.${mon.level}）</div>
+              <div class="muted small">每层奖励修为与灵石，每5层天机令，每10层里程碑</div></div>
+          </div>
+          <div class="row" style="gap:6px;margin-bottom:8px">
+            <button class="btn gold grow" data-action="towerOne">⚔️ 挑战一层</button>
+            <button class="btn purple grow" data-action="towerAuto">🔥 连续闯塔</button>
+            <button class="btn grow" data-action="towerSweep" ${s.towerDailyRewardClaimed || !s.towerBestFloor ? 'disabled' : ''}>🧹 ${s.towerDailyRewardClaimed ? '今日已扫荡' : '每日扫荡'}</button>
+          </div>
+          <div class="card">${msList}</div>
+        </div>`;
+    },
 
-    renderSkinCollection(s);
-  }
+    cave(s) {
+      const cards = GameEngine.CAVE_BUILDINGS.map(b => {
+        const lv = s.cave[b.id] || 0;
+        const locked = s.level < b.minLevel;
+        const maxed = lv >= b.maxLevel;
+        const cost = GameEngine.getCaveBuildingCost(b.id);
+        const can = !locked && !maxed && s.gold >= cost;
+        const eff = (l) => Object.entries(b.effect(l)).map(([k, v]) => `${GameEngine.CAVE_EFFECT_NAMES[k]} ${Math.round(v * 10) / 10}`).join(' ');
+        return `<div class="card ${locked ? 'dim' : ''}"><div class="row">
+          <div class="skill-ico">${b.icon}</div>
+          <div class="grow"><b>${b.name}</b> <span class="lv-pips">${lv}/${b.maxLevel}</span> ${locked ? `<span class="tag">Lv.${b.minLevel}解锁</span>` : ''}
+            <div class="muted small">${b.desc}</div>
+            <div class="small">${lv ? `<span class="t-jade">${eff(lv)}</span>` : '<span class="muted">未建造</span>'}${!maxed ? ` <span class="muted">→ ${eff(lv + 1)}</span>` : ''}</div>
+            <div class="prog gold" style="margin-top:5px"><i style="width:${lv / b.maxLevel * 100}%"></i></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <button class="btn sm ${can ? 'gold' : ''}" data-action="caveUp" data-id="${b.id}" ${can ? '' : 'disabled'}>${maxed ? '满级' : `${lv ? '升级' : '建造'}<span class="cost">${fmt(cost)}</span>`}</button>
+            ${!maxed && !locked ? `<button class="btn sm" data-action="caveMax" data-id="${b.id}" ${can ? '' : 'disabled'}>连升</button>` : ''}
+          </div></div></div>`;
+      }).join('');
+      return `<div class="sec"><div class="sec-title">洞府建设<span class="extra">洞府产出离线也会累积</span></div>${cards}</div>`;
+    },
 
-  function filterSkins(type) {
-    currentSkinFilter = type;
-    document.getElementById('skinFilterAll').style.borderColor = type === 'all' ? '#ffdd57' : '#4a4a8a';
-    document.getElementById('skinFilterWeapon').style.borderColor = type === 'weapon' ? '#ffdd57' : '#4a4a8a';
-    document.getElementById('skinFilterArmor').style.borderColor = type === 'armor' ? '#ffdd57' : '#4a4a8a';
-    const s = GameEngine.getState();
-    if (s) renderSkinCollection(s);
-  }
-
-  function renderSkinCollection(s) {
-    const pool = GameEngine.GACHA_POOL.filter(item =>
-      currentSkinFilter === 'all' || item.type === currentSkinFilter
-    );
-    pool.sort((a, b) => {
-      const aOwned = s.ownedSkins.includes(a.id) ? 1 : 0;
-      const bOwned = s.ownedSkins.includes(b.id) ? 1 : 0;
-      if (aOwned !== bOwned) return bOwned - aOwned;
-      return b.quality - a.quality;
-    });
-    const canvasItems = [];
-    let html = '';
-    for (const item of pool) {
-      const owned = s.ownedSkins.includes(item.id);
-      const equipped = (item.type === 'weapon' && s.equippedWeaponSkin === item.id) || (item.type === 'armor' && s.equippedArmorSkin === item.id);
-      const qColor = GameEngine.GACHA_QUALITY_COLORS[item.quality];
-      const qName = GameEngine.GACHA_QUALITY_NAMES[item.quality];
-      const cls = equipped ? 'skin-card equipped' : (owned ? 'skin-card' : 'skin-card locked');
-      const canvasId = `skin-cvs-${item.id}`;
-      html += `<div class="${cls}">
-        <div class="skin-preview">${owned
-          ? `<canvas id="${canvasId}" width="40" height="40" style="width:40px;height:40px;image-rendering:pixelated;"></canvas>`
-          : `<div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;color:#555;font-size:16px;">?</div>`
-        }</div>
-        <span class="skin-quality" style="background:${qColor};">${qName}</span>
-        <div class="skin-info">
-          <span class="skin-name" style="color:${owned ? qColor : '#555'};">${owned ? item.name : '???'}</span>
-          <div class="skin-desc">${owned ? item.desc : '未获得'}</div>
+    gacha(s) {
+      const rates = GameEngine.GACHA_QUALITY_NAMES.map((n, i) => `<span style="color:${GameEngine.GACHA_QUALITY_COLORS[i]}">${n} ${[30, 35, 20, 10, 4, 1][i]}%</span>`).join('');
+      const pulls = lastPulls ? `<div class="sec"><div class="sec-title">本次所得</div><div class="pull-results">${lastPulls.map((r, i) => {
+        const qc = GameEngine.GACHA_QUALITY_COLORS[r.quality];
+        return `<div class="pull" style="--qc:${qc};animation-delay:${i * 0.07}s">
+          ${r.isEquip ? `<div style="font-size:28px;line-height:48px">🎁</div>` : `<canvas class="skin-cv" data-skin="${r.id}" data-type="${r.type}" width="24" height="24"></canvas>`}
+          <div class="pn">${r.name}</div><div class="muted">${r.isEquip ? r.desc : r.isNew ? '✨新外观' : `重复+${r.refund}令`}</div></div>`;
+      }).join('')}</div></div>` : '';
+      const pool = GameEngine.GACHA_POOL.filter(x => skinFilter === 'all' || x.type === skinFilter);
+      const owned = new Set(s.ownedSkins);
+      pool.sort((a, b) => (owned.has(b.id) - owned.has(a.id)) || b.quality - a.quality);
+      const grid = pool.map(x => {
+        const has = owned.has(x.id);
+        const eq = s.equippedWeaponSkin === x.id || s.equippedArmorSkin === x.id;
+        const qc = GameEngine.GACHA_QUALITY_COLORS[x.quality];
+        return `<div class="skin-cell ${has ? '' : 'locked'} ${eq ? 'equipped' : ''}" ${has ? `data-action="toggleSkin" data-id="${x.id}" data-type="${x.type}"` : ''} title="${esc(x.name)}：${esc(x.desc)}">
+          ${has ? `<canvas class="skin-cv" data-skin="${x.id}" data-type="${x.type}" width="24" height="24"></canvas>` : `<div style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:18px;color:#555">?</div>`}
+          <div class="sn" style="color:${has ? qc : '#555'}">${has ? x.name : '???'}</div>${eq ? '<div class="t-gold">已穿戴</div>' : ''}</div>`;
+      }).join('');
+      return `<div class="gacha-hero">
+          <div class="muted">天机令</div><div class="gacha-tokens">🎫 ${fmt(s.tianjiTokens)}</div>
+          <div class="rates">${rates}</div>
+          <div class="row" style="justify-content:center;gap:8px">
+            <button class="btn gold lg" data-action="pull1" ${s.tianjiTokens >= 10 ? '' : 'disabled'}>单抽 · 10令</button>
+            <button class="btn purple lg" data-action="pull10" ${s.tianjiTokens >= 90 ? '' : 'disabled'}>十连 · 90令</button>
+          </div>
+          <div class="muted small" style="margin-top:8px">十连必出珍品以上 · 40%装备 60%外观 · 重复外观返还天机令</div>
+          <div class="muted small">天机令来源：精英妖兽、秘境、锁妖塔、奇遇、修行指引</div>
         </div>
-        ${owned && !equipped ? `<button class="action-btn" onclick="Actions.doEquipSkin('${item.id}')" style="padding:1px 5px;font-size:8px;border-color:${qColor};color:${qColor};">装备</button>` : ''}
-        ${equipped ? '<span style="color:#FFD700;font-size:9px;">✅</span>' : ''}
-      </div>`;
-      if (owned) canvasItems.push({ id: canvasId, skinId: item.id, type: item.type });
-    }
-    if (!html) html = '<div style="color:#555;font-size:10px;">暂无外观</div>';
-    document.getElementById('skinCollection').innerHTML = html;
-    requestAnimationFrame(() => drawSkinPreviews(canvasItems, s));
+        ${pulls}
+        <div class="sec"><div class="sec-title">外观收藏<span class="extra">${s.ownedSkins.length}/${GameEngine.GACHA_POOL.length} · 点击穿戴/卸下</span></div>
+          <div class="subtabs">${[['all', '全部'], ['weapon', '武器'], ['armor', '衣服']].map(([k, n]) => `<button class="${skinFilter === k ? 'active' : ''}" data-action="skinFilter" data-f="${k}">${n}</button>`).join('')}</div>
+          <div class="skin-grid">${grid}</div></div>`;
+    },
+
+    ascend(s) {
+      const ups = GameEngine.ASCENSION_UPGRADES.map(u => {
+        const lv = s.ascensionBonuses[u.id] || 0;
+        const maxed = lv >= u.maxLevel;
+        const cost = GameEngine.getAscensionUpgradeCost(u, lv);
+        const can = !maxed && s.ascensionPoints >= cost;
+        return `<div class="card row"><div class="skill-ico">${u.icon}</div>
+          <div class="grow"><b>${u.name}</b> <span class="lv-pips">${lv}/${u.maxLevel}</span><div class="muted small">${u.desc} · 当前 +${lv * u.perLevel}${u.id === 'startLevel' ? '级' : '%'}</div></div>
+          <button class="btn sm ${can ? 'gold' : ''}" data-action="ascUp" data-id="${u.id}" ${can ? '' : 'disabled'}>${maxed ? '满级' : `提升<span class="cost">${cost}仙缘</span>`}</button></div>`;
+      }).join('');
+      const owned = s.pastLifeTalents || [];
+      const talents = GameEngine.PAST_LIFE_TALENTS.map(t => {
+        const has = owned.includes(t.id), cur = t.id === s.currentTalentId;
+        return `<div class="card row ${has ? (cur ? 'hl' : '') : 'dim'}"><div class="skill-ico">${has ? t.icon : '?'}</div>
+          <div class="grow"><b>${has ? t.name : '???'}</b> ${cur ? '<span class="tag t-gold">当前</span>' : ''}<div class="muted small">${has ? t.desc : '飞升时随机觉醒'}</div>${has ? `<div class="small" style="color:#7a7090;font-style:italic">「${t.flavor}」</div>` : ''}</div></div>`;
+      }).join('');
+      return `<div class="card hl" style="text-align:center;padding:14px">
+          <div class="muted">飞升 ${s.ascensionCount} 次 · 仙缘点</div>
+          <div class="gacha-tokens" style="color:var(--gold-2)">✨ ${s.ascensionPoints}</div>
+          <div class="muted small" style="margin:6px 0 10px">${s.canAscend ? `此时飞升可获得 <b class="t-gold">${s.ascensionPointsPreview}</b> 仙缘点（等级、塔层、灵兽数量越高越多）` : '突破大乘期（Lv.50）后可飞升转生'}</div>
+          <button class="btn purple lg" data-action="ascend" ${s.canAscend ? '' : 'disabled'}>🌟 白日飞升</button>
+          <div class="muted small" style="margin-top:8px">重置：等级、装备、材料、功法、洞府<br>保留：灵兽(等级减半)、成就、图鉴、外观、天机令、10%灵石</div>
+        </div>
+        <div class="sec" style="margin-top:12px"><div class="sec-title">仙缘加持<span class="extra">永久生效</span></div>${ups}</div>
+        <div class="sec"><div class="sec-title">前世天赋<span class="extra">${owned.length}/${GameEngine.PAST_LIFE_TALENTS.length}</span></div>${talents}</div>`;
+    },
+
+    codex(s) {
+      const sub = `<div class="subtabs"><button class="${codexSub === 'ach' ? 'active' : ''}" data-action="codexSub" data-f="ach">🏆 成就</button><button class="${codexSub === 'mon' ? 'active' : ''}" data-action="codexSub" data-f="mon">👹 妖兽图鉴</button></div>`;
+      if (codexSub === 'ach') {
+        const done = GameEngine.ACHIEVEMENTS.filter(a => s.achievements[a.id]).length;
+        return sub + `<div class="sec-title">成就<span class="extra">${done}/${GameEngine.ACHIEVEMENTS.length} · 奖励永久生效</span></div>` +
+          GameEngine.ACHIEVEMENTS.map(a => {
+            const d = !!s.achievements[a.id];
+            return `<div class="ach ${d ? 'done' : ''}"><div class="ai">${a.icon}</div><div class="grow"><b>${a.name}</b> ${d ? '✅' : ''}<div class="muted small">${a.desc}</div></div><div class="small ${d ? 't-jade' : 'muted'}">${GameEngine.describeReward(a.reward)}</div></div>`;
+          }).join('');
+      }
+      const list = GameEngine.getMonsterBestiary();
+      const found = list.filter(m => m.discovered).length;
+      let html = sub + `<div class="sec-title">妖兽图鉴<span class="extra">${found}/${list.length} · 点击查看</span></div>`;
+      for (let tier = 0; tier < 6; tier++) {
+        const group = list.filter(m => m.tier === tier);
+        html += `<div class="muted small" style="margin:8px 0 4px">— ${GameEngine.REALMS[tier].name} · ${GameEngine.REALMS[tier].scene} —</div><div class="codex-grid">` + group.map(m => `
+          <div class="codex-item ${m.discovered ? '' : 'unknown'}" data-action="monsterInfo" data-name="${m.name}">
+            <canvas class="mon-cv" data-name="${m.name}" ${m.discovered ? '' : 'data-sil="1"'} width="48" height="48"></canvas>
+            <div class="cn">${m.discovered ? m.name : '???'}</div>
+            <div class="muted">${m.discovered ? `击杀 ${fmt(m.kills)}` : '未遭遇'}</div></div>`).join('') + '</div>';
+      }
+      return html;
+    },
+  };
+
+  // 渲染后绘制画布
+  function drawMouseTo(canvas, s, extra) {
+    if (!canvas) return;
+    const c = canvas.getContext('2d');
+    c.clearRect(0, 0, canvas.width, canvas.height);
+    c.imageSmoothingEnabled = false;
+    const ri = s.realmIndex;
+    const comp = [0, 0, 0, 3, 6, 9][ri];
+    Sprites.drawMouseByRealm(c, Math.floor(canvas.width / 2) - 1, canvas.height - 8 + comp, 1, ri, 0, 0, {
+      equippedWeaponSkin: extra && 'weapon' in extra ? extra.weapon : s.equippedWeaponSkin,
+      equippedArmorSkin: extra && 'armor' in extra ? extra.armor : s.equippedArmorSkin,
+    });
   }
 
-  function drawSkinPreviews(items, state) {
-    const realmIndex = state ? Math.min(Math.floor((state.level - 1) / 10), 5) : 0;
-    for (const item of items) {
-      const cvs = document.getElementById(item.id);
-      if (!cvs) continue;
-      const cctx = cvs.getContext('2d');
-      cctx.clearRect(0, 0, 40, 40);
-      if (item.type === 'weapon') Sprites.drawWeaponWithSkin(cctx, 20, 34, 1.8, realmIndex, 0, 0, item.skinId);
-      else Sprites.drawMouseByRealm(cctx, 20, 30, 1.2, realmIndex, 0, 0, { equippedArmorSkin: item.skinId });
-    }
+  function drawSkinCanvases(s) {
+    document.querySelectorAll('.skin-cv').forEach(cv => {
+      const id = cv.dataset.skin, type = cv.dataset.type;
+      const c = cv.getContext('2d');
+      c.clearRect(0, 0, cv.width, cv.height); c.imageSmoothingEnabled = false;
+      if (type === 'weapon') {
+        c.save(); c.translate(12, 18); c.rotate(-0.6);
+        Sprites.drawWeaponWithSkin(c, 0, 0, 1, Math.min(5, s.realmIndex), 0, 0, id);
+        c.restore();
+      } else {
+        cv.width = 24; cv.height = 28;
+        drawMouseTo(cv, { ...s, realmIndex: Math.min(1, s.realmIndex) }, { armor: id, weapon: null });
+      }
+    });
   }
 
-  function setLastGachaResults(results) { lastGachaResults = results; }
+  const POST = {
+    status(s) { drawMouseTo($('heroCanvas'), s); },
+    beasts(s) {
+      document.querySelectorAll('.beast-cv').forEach(cv => PixelArt.drawToCanvas(cv, cv.dataset.name, { silhouette: cv.dataset.sil ? '#2a2440' : null }));
+      const m = s.visualEquip.mount;
+      const mc = $('mountCanvas');
+      if (mc) {
+        if (m) {
+          PixelArt.drawToCanvas(mc, m === '仙鹤' ? 'mount_crane' : 'mount_qilin');
+        } else PixelArt.drawToCanvas(mc, 'mount_crane', { silhouette: '#2a2440' });
+      }
+    },
+    realm(s) { const mon = GameEngine.getTowerMonster(s.towerFloor); const cv = $('towerCanvas'); if (cv) PixelArt.drawToCanvas(cv, mon.name); },
+    gacha(s) { drawSkinCanvases(s); },
+    codex() { document.querySelectorAll('.mon-cv').forEach(cv => PixelArt.drawToCanvas(cv, cv.dataset.name, { silhouette: cv.dataset.sil ? '#1a1628' : null })); },
+  };
+  const POST_ALWAYS = {};
 
-  // ========== 弹窗 ==========
-  function showResult(title, msg) {
-    document.getElementById('resultTitle').textContent = title;
-    document.getElementById('resultMsg').innerHTML = msg;
-    document.getElementById('resultPopup').style.display = 'block';
-    document.getElementById('overlay').style.display = 'block';
-  }
+  // ========== 公开 ==========
+  function setTab(id) { switchTab(id); }
+  function setCodexSub(f) { codexSub = f; renderTab(true); }
+  function setSkinFilter(f) { skinFilter = f; renderTab(true); }
+  function setLastPulls(r) { lastPulls = r; }
+  function getCurrentTab() { return currentTab; }
 
-  function closePopup() {
-    document.getElementById('offlinePopup').style.display = 'none';
-    document.getElementById('resultPopup').style.display = 'none';
-    document.getElementById('overlay').style.display = 'none';
-  }
-
-  // ========== 导出 ==========
   return {
-    initTabs, updateUI, refreshCurrentTab,
-    showResult, closePopup,
-    filterSkins, setLastGachaResults,
+    initTabs, update, renderTab, toast, modal, closeModal, modalButton, confirmBox,
+    setTab, setCodexSub, setSkinFilter, setLastPulls, getCurrentTab, flashSkill, toggleLog, drawMouseTo,
   };
 })();
