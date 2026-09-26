@@ -431,10 +431,8 @@ const Renderer = (() => {
     let mouseY = groundY - 7;
     if (mountName && !gs.isDead) {
       const bob = Math.round(Math.sin(animFrame * 0.05) * 1);
-      const mSize = PixelArt.size(mountName);
       PixelArt.draw(wctx, mountName, mp.x - 2, groundY + bob + Math.round(fl * 0.5), { frame: Math.floor(animFrame / 20) % 2 });
       mouseY = groundY - (mountName === 'mount_crane' ? 19 : 20) + bob - 7 + Math.round(fl * 0.5) - Math.round(fl);
-      void mSize;
     }
 
     // 灵兽
@@ -463,10 +461,6 @@ const Renderer = (() => {
         equippedWeaponSkin: gs.equippedWeaponSkin || null,
         equippedArmorSkin: gs.equippedArmorSkin || null,
       });
-      if (mouseHit > 4) { // 受击泛红
-        wctx.globalCompositeOperation = 'source-atop';
-        wctx.restore(); wctx.save();
-      }
       wctx.restore();
     }
     if (shieldOn) drawShield(mp.x, mouseY + fl - 4);

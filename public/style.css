@@ -76,9 +76,10 @@ b { font-weight: 700; }
 .battle {
   position: relative; flex: 1; min-height: 240px; border-radius: 10px; overflow: hidden;
   border: 2px solid #0a0810; box-shadow: 0 0 0 2px var(--line), 0 10px 30px rgba(0,0,0,.45);
-  background: #000; user-select: none;
+  background: #0d0b13; user-select: none;
 }
-#battleCanvas { position: absolute; inset: 0; display: block; image-rendering: pixelated; }
+.battle-view { position: absolute; inset: 0; overflow: hidden; }
+#battleCanvas { position: absolute; left: 0; top: 0; display: block; image-rendering: pixelated; }
 .side { display: flex; flex-direction: column; min-height: 0; background: var(--bg-2); border-left: 2px solid #0a0810; box-shadow: -2px 0 0 var(--line); }
 
 /* ---------------- 战斗 HUD ---------------- */
@@ -87,7 +88,7 @@ b { font-weight: 700; }
   background: rgba(12,10,20,.72); border: 1px solid rgba(255,255,255,.08); border-radius: 8px; backdrop-filter: blur(3px);
 }
 .hud-row { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
-.realm-chip { font-size: 12px; font-weight: 800; padding: 1px 8px; border-radius: 4px; border: 1px solid currentColor; background: rgba(0,0,0,.3); }
+.realm-chip { white-space: nowrap; font-size: 12px; font-weight: 800; padding: 1px 8px; border-radius: 4px; border: 1px solid currentColor; background: rgba(0,0,0,.3); }
 .hud-level { font-family: var(--pixel); font-size: 10px; color: #e8f6ff; }
 .hud-power { margin-left: auto; font-size: 11px; color: var(--dim); }
 .hud-power b { color: var(--gold-2); font-variant-numeric: tabular-nums; }
@@ -371,7 +372,10 @@ textarea.save-box { width: 100%; height: 110px; background: #0d0b13; color: var(
   .top-actions { margin-left: auto; }
   .layout { display: flex; flex-direction: column; height: auto; }
   .stage { padding: 8px 8px 0; }
-  .battle { flex: none; height: 52vh; min-height: 300px; }
+  .battle { flex: none; height: 56vh; min-height: 340px; }
+  .battle-view { bottom: 62px; }
+  .skillbar { bottom: 6px; }
+  .hud-streak { top: auto; bottom: 150px; font-size: 13px; }
   .hud-player { width: 190px; padding: 6px 8px; left: 6px; top: 6px; }
   .hud-quest { width: 170px; right: 6px; top: 6px; padding: 6px 8px; }
   .hud-quest .q-desc { font-size: 11px; }
