@@ -295,24 +295,23 @@ const PixelArt = (() => {
   } });
 
   // ===== 金丹期 =====
-  def('冰魄蜘蛛', { w: 36, h: 24, ax: 17, ay: 23, frames: 2, outline: '#16233A', draw(T, f) {
+  def('冰魄蜘蛛', { w: 36, h: 24, ax: 18, ay: 23, frames: 2, outline: '#16233A', draw(T, f) {
     const b = f ? 1 : 0;
-    // 四对长腿：从身体拱起再落地
-    const legs = [[9, 2, 20], [12, 6, 21], [18, 26, 21], [21, 31, 20]];
-    legs.forEach(([hip, foot, top], i) => {
-      const lift = (i % 2 === b) ? -2 : 0;
-      const kneeX = (hip + foot) / 2 + (foot < hip ? -1 : 1);
-      T.L(hip, 13, kneeX, 5 + lift, 'iceDark', 1, 1);
-      T.L(kneeX, 5 + lift, foot, 22, 'iceDark', 1, 1);
-      T.P(kneeX, 5 + lift, 'ice', 0);
+    // 八条腿：高高拱起的膝盖（侧视可见两侧各四条）
+    const legs = [[13, 1, 5], [14, 6, 3], [17, 11, 2], [19, 24, 2], [21, 29, 3], [22, 34, 5]];
+    legs.forEach(([hip, foot, knee], i) => {
+      const lift = (i % 2 === b) ? -1 : 0;
+      const kx = Math.round((hip + foot) / 2);
+      T.L(hip, 14, kx, knee + lift, 'iceDark', 1, 0);
+      T.L(kx, knee + lift, foot, 22, 'iceDark', 1, 1);
     });
-    T.E(24, 13, 8, 6.5, 'ice');                                   // 腹
-    T.PS([[24, 10], [23, 11], [25, 11], [24, 12], [24, 13], [22, 13], [26, 13], [24, 15]], '#FFFFFF');
-    T.E(12, 15, 6, 5, 'ice');                                     // 头胸
-    T.eye(8, 13, '#16325A'); T.eye(12, 13, '#16325A');
-    T.P(10, 12, '#16325A'); T.P(14, 12, '#16325A');
-    T.L(7, 18, 6, 21, 'iceDark'); T.L(10, 19, 10, 21, 'iceDark');  // 螯
-    T.PS(b ? [[33, 4], [34, 3], [33, 2]] : [[31, 3], [32, 2], [31, 1]], '#E6FBFF');
+    T.E(25, 15, 7, 5, 'ice');                                      // 腹
+    T.PS([[25, 12], [24, 13], [26, 13], [25, 14], [25, 15], [23, 15], [27, 15], [25, 17]], '#FFFFFF');
+    T.E(12, 16, 5.5, 4.5, 'ice');                                  // 头胸
+    T.eye(8, 14, '#16325A'); T.eye(12, 14, '#16325A');
+    T.P(10, 13, '#16325A'); T.P(14, 13, '#16325A');
+    T.L(7, 19, 6, 21, 'iceDark'); T.L(10, 20, 10, 21, 'iceDark');   // 螯
+    T.PS(b ? [[33, 8], [34, 7], [33, 6]] : [[31, 7], [32, 6], [31, 5]], '#E6FBFF');
   } });
 
   def('三眼火鸦', { w: 32, h: 28, ax: 15, ay: 27, frames: 2, outline: '#1A0F1E', draw(T, f) {

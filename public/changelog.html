@@ -137,8 +137,8 @@
       <h1>🐭 鼠鼠修仙 · 迭代记录</h1>
       <p>每一个版本都是一次飞升 ✨</p>
       <div class="stats">
-        <div class="stat"><span class="stat-value">v2.9</span><span class="stat-label">当前版本</span></div>
-        <div class="stat"><span class="stat-value">31</span><span class="stat-label">版本迭代</span></div>
+        <div class="stat"><span class="stat-value">v3.0</span><span class="stat-label">当前版本</span></div>
+        <div class="stat"><span class="stat-value">32</span><span class="stat-label">版本迭代</span></div>
         <div class="stat"><span class="stat-value">~7000+</span><span class="stat-label">总代码行数</span></div>
         <div class="stat"><span class="stat-value">6天</span><span class="stat-label">开发周期</span></div>
       </div>
@@ -146,8 +146,72 @@
 
     <div class="timeline" id="timeline">
 
+      <!-- v3.0 -->
+      <div class="version-card major open">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge major">v3.0</span>
+          <span class="version-title">回归v1鼠鼠画风 · 像素生物重制 · 数值重做 · 界面重构</span>
+          <span class="version-date">2026-09-26</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">主角回到 v1 的手绘像素鼠鼠；AI 精灵图集下线，全部生物与场景改为统一的像素画风；数值模型重写，修复多个"写了但不生效"的机制；界面整体重做。</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐭 画风 <span class="tag tag-visual">美术</span></div>
+            <ul class="feature-list">
+              <li><strong>主角回归 v1</strong>：鼠鼠使用 v1 的 <code>sprites.js</code> 手绘像素（大圆耳、2×2小眼、胡须），六境界服饰全部保留</li>
+              <li><strong>下线 AI 精灵图集</strong>：移除 <code>sprite-loader.js</code> 与 <code>assets/*.png</code>（风格不统一、白底残留、切割错位）</li>
+              <li><strong>26 种生物重绘</strong>：新增 <code>pixelart.js</code> 像素雕刻 DSL（体块+球面三色阶+自动描边+Q版眼睛），18 怪物 / 6 灵兽 / 2 坐骑风格统一</li>
+              <li><strong>六境界像素场景</strong>：黄枫谷秋枫、乱星海落日、天南竹海、星宫夜色、灵界浮岛、真仙界天门</li>
+              <li><strong>像素缓冲渲染</strong>：世界画面在低分辨率缓冲中绘制后最近邻放大，粒子/特效/武器旋转全部"像素化"；伤害数字与血条走高清图层</li>
+              <li>怪物死亡碎成像素粒子、精英金色描边、受击白闪（修复白色方块问题）、掉落灵石弹跳</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">⚔️ 玩法 <span class="tag tag-new">新功能</span></div>
+            <ul class="feature-list">
+              <li><strong>神通（主动技能）</strong>：剑气斩 / 回春术 / 金光罩 / 万剑归宗，点击或按 1-4 施放，筑基期解锁自动施放</li>
+              <li><strong>修行指引</strong>：23 步新手任务链，带领熟悉每个系统并发放奖励；标签页按进度逐步解锁并带红点提示</li>
+              <li><strong>渡劫演出</strong>：乌云压顶、三道天雷劈落再结算；失败累积"道心"（每次+10%成功率）</li>
+              <li>存档导出/导入、玩法说明、8-bit 合成音效（可关闭）、快捷键</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">📊 数值重做 <span class="tag tag-balance">平衡</span></div>
+            <ul class="feature-list">
+              <li>旧版用模拟器实测：<strong>2小时满级且零死亡</strong>，锁妖塔可无限刷到 5000+ 层</li>
+              <li>怪物/修为/灵石/装备全部按等级参考曲线缩放；每个境界"<strong>刚突破很强 → 越接近圆满越难</strong>"，渡劫破瓶颈</li>
+              <li>装备属性随装备等级成长（旧版为线性，后期形同虚设）；装备对比改为<strong>战力</strong>变化</li>
+              <li>锁妖塔按层数指数增强；离线收益改为逐级估算、按1倍速计算、上限12小时</li>
+              <li>新增 <code>tools/balance-sim.js</code> 无头数值模拟器，可一键测出各境界到达时间</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🔧 修复 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li><strong>攻速</strong>属性此前完全不生效（鞋子、惊鸿剑诀、仙鹤都白加）→ 现在决定每回合出手次数</li>
+              <li>怪物特性 减速/会心 此前无效果；吸血怪按玩家攻击力回血的错误逻辑修正</li>
+              <li>灵兽技能（三昧真火/寒冰甲/天雷击/隐遁/龙吟/涅槃之火）此前只是文字 → 全部生效</li>
+              <li>前世天赋"坊市大亨"装备掉率加成此前无效；功法特效ID对不上导致大部分功法无特效</li>
+              <li>成就奖励改为百分比永久加成，并由已达成成就实时计算（旧版固定数值后期无意义）</li>
+              <li>高暴击/吸血/闪避词条随等级无限膨胀导致"不死"的问题</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🖥️ 界面 <span class="tag tag-refactor">重构</span></div>
+            <ul class="feature-list">
+              <li>战斗画面为主视觉；右侧 10 个带文字的标签页；顶栏资源条；字号整体放大</li>
+              <li>战斗 HUD：境界/等级/战力/修为/生命/Buff；渡劫按钮与阵亡提示直接显示在画面上</li>
+              <li>弹窗改为 Toast 提示，不再频繁打断；DOM 只在内容变化时重写，不再闪烁</li>
+              <li>手机端：战斗画面在上、标签可横滑、神通栏独立一行</li>
+              <li>旧存档自动迁移（v2 → v3）</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
       <!-- v2.9 -->
-      <div class="version-card patch open">
+      <div class="version-card patch">
         <div class="version-header" onclick="toggleVersion(this)">
           <span class="version-badge patch">v2.9</span>
           <span class="version-title">精灵大小比例优化 + 灵兽/坐骑独立缩放</span>
@@ -176,7 +240,7 @@
       </div>
 
       <!-- v2.8 -->
-      <div class="version-card minor open">
+      <div class="version-card minor">
         <div class="version-header" onclick="toggleVersion(this)">
           <span class="version-badge minor">v2.8</span>
           <span class="version-title">精灵放大2.5倍 + 修复帧方向不一致 + 朝向修正</span>
@@ -214,7 +278,7 @@
       </div>
 
       <!-- v2.7 -->
-      <div class="version-card major open">
+      <div class="version-card major">
         <div class="version-header" onclick="toggleVersion(this)">
           <span class="version-badge major">v2.7</span>
           <span class="version-title">🎨 Sprite Sheet 精灵图集系统上线</span>
@@ -261,7 +325,7 @@
       </div>
 
       <!-- v2.6 -->
-      <div class="version-card minor open">
+      <div class="version-card minor">
         <div class="version-header" onclick="toggleVersion(this)">
           <span class="version-badge minor">v2.6</span>
           <span class="version-title">怪物·灵兽·坐骑像素画全面重制</span>
@@ -308,7 +372,7 @@
       </div>
 
       <!-- v2.5 -->
-      <div class="version-card minor open">
+      <div class="version-card minor">
         <div class="version-header" onclick="toggleVersion(this)">
           <span class="version-badge minor">v2.5</span>
           <span class="version-title">抽卡外观配图</span>
@@ -332,7 +396,7 @@
       </div>
 
       <!-- v2.4 -->
-      <div class="version-card minor open">
+      <div class="version-card minor">
         <div class="version-header" onclick="toggleVersion(this)">
           <span class="version-badge minor">v2.4</span>
           <span class="version-title">怪物图鉴配图</span>
@@ -354,7 +418,7 @@
       </div>
 
       <!-- v2.3 -->
-      <div class="version-card minor open">
+      <div class="version-card minor">
         <div class="version-header" onclick="toggleVersion(this)">
           <span class="version-badge minor">v2.3</span>
           <span class="version-title">灵宠龙方向修复 + 衣服适配v4.0体型</span>
@@ -383,7 +447,7 @@
       </div>
 
       <!-- v2.2 -->
-      <div class="version-card minor open">
+      <div class="version-card minor">
         <div class="version-header" onclick="toggleVersion(this)">
           <span class="version-badge minor">v2.2</span>
           <span class="version-title">鼠鼠形状向参考图靠拢 + 龙系怪物方向修复</span>
@@ -413,7 +477,7 @@
       </div>
 
       <!-- v2.1 -->
-      <div class="version-card minor open">
+      <div class="version-card minor">
         <div class="version-header" onclick="toggleVersion(this)">
           <span class="version-badge minor">v2.1</span>
           <span class="version-title">鼠鼠精细化 + 中华龙形象重制</span>
@@ -449,7 +513,7 @@
       </div>
 
       <!-- v2.0.1 -->
-      <div class="version-card patch open">
+      <div class="version-card patch">
         <div class="version-header" onclick="toggleVersion(this)">
           <span class="version-badge patch">v2.0.1</span>
           <span class="version-title">修复光环方块 + 美术调整指南</span>
@@ -476,7 +540,7 @@
       </div>
 
       <!-- v2.0 -->
-      <div class="version-card major open">
+      <div class="version-card major">
         <div class="version-header" onclick="toggleVersion(this)">
           <span class="version-badge major">v2.0</span>
           <span class="version-title">方块像素风美术全面重制</span>

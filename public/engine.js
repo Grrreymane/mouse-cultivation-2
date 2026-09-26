@@ -590,6 +590,7 @@ const GameEngine = (() => {
 
   function migrateState() {
     const def = getDefaultState();
+    const oldVersion = state.saveVersion || 0;
     for (const key of Object.keys(def)) {
       if (state[key] === undefined) state[key] = def[key];
     }
@@ -603,7 +604,7 @@ const GameEngine = (() => {
     if (!state.ascensionBonuses) state.ascensionBonuses = def.ascensionBonuses;
     if (!state.skillCooldowns) state.skillCooldowns = {};
 
-    if ((state.saveVersion || 0) < 3) {
+    if (oldVersion < 3) {
       // v2 → v3：数值模型整体换算
       delete state.achievementBonuses; // 改为由已达成成就实时计算
       delete state._tribWarnShown;
