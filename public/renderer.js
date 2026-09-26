@@ -577,8 +577,16 @@ const Renderer = (() => {
   }
 
   function playTribulation(onResolve) {
-    trib = { t: 0, bolts: [], resolved: false, onResolve, result: null };
+    const t = { t: 0, bolts: [], resolved: false, onResolve, result: null };
+    trib = t;
     if (typeof Sound !== 'undefined') Sound.play('storm');
+    // 画面不在绘制（后台标签页）时也要能结算
+    setTimeout(() => {
+      if (t.resolved) return;
+      t.resolved = true;
+      t.result = t.onResolve ? t.onResolve() : null;
+      if (trib === t) trib = null;
+    }, 3500);
   }
 
   function drawTribulation(gs, x, y) {
