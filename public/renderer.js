@@ -1,789 +1,946 @@
 // ============================================================
-// renderer.js — 鼠鼠修仙2 Canvas 渲染系统
-// 场景绘制 / 动画系统 / 粒子特效 / 伤害数字 / 战斗渲染
+// renderer.js — 鼠鼠修仙 v3 战斗画面
+// 世界层：低分辨率像素缓冲（1像素=1方块）→ 最近邻放大
+// 界面层：高清画布（伤害数字 / 血条 / 名字）
 // ============================================================
 
 const Renderer = (() => {
   'use strict';
 
-  // ========== 状态变量 ==========
-  let canvas, ctx;
+  let canvas, ctx;              // 高清主画布
+  let world, wctx;              // 低分辨率世界缓冲
+  let W = 320, H = 180, PX = 3, DPR = 1;
+  let groundY = 140;
   let animFrame = 0;
-  let particles = [], damageTexts = [], combatTexts = [];
-  let mouseAttackAnim = 0, monsterHitAnim = 0, monsterDeathAnim = 0, monsterWalkIn = 0;
-  let beastAttackAnim = 0;
-  let skillEffects = [];
-  let envParticles = [];
-  let beastProjectiles = [];
-  let dayNightPhase = 0;
+  let bgCache = null, bgKey = '';
 
-  const PIXEL_SCALE = 3;
-  const DAY_CYCLE_SPEED = 0.0003;
+  // 动画状态
+  let particles = [], texts = [], effects = [], coins = [];
+  let mouseAtk = 0, mouseHit = 0, monsterHit = 0, monsterLunge = 0, monsterWalkIn = 1;
+  let beastAtk = 0, shake = 0, flash = 0, flashColor = '#FFFFFF';
+  let dying = null;             // 正在消散的怪物
+  let trib = null;              // 渡劫演出
+  let levelBeam = 0;
+  let lastState = null;
 
   // ========== 初始化 ==========
-  function init(canvasElement) {
-    canvas = canvasElement;
+  function init(canvasEl) {
+    canvas = canvasEl;
     ctx = canvas.getContext('2d');
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
+    world = document.createElement('canvas');
+    wctx = world.getContext('2d');
+    resize();
+    window.addEventListener('resize', resize);
   }
 
-  function resizeCanvas() {
+  function resize() {
     const r = canvas.parentElement.getBoundingClientRect();
-    canvas.width = r.width;
-    canvas.height = r.height;
+    DPR = Math.min(2, window.devicePixelRatio || 1);
+    const cssW = Math.max(200, r.width), cssH = Math.max(150, r.height);
+    PX = Math.max(2, Math.floor(Math.min(cssH / 170, cssW / 280)));
+    W = Math.ceil(cssW / PX); H = Math.ceil(cssH / PX);
+    world.width = W; world.height = H;
+    canvas.width = Math.round(cssW * DPR); canvas.height = Math.round(cssH * DPR);
+    canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
+    groundY = H - Math.round(Math.max(24, Math.min(44, H * 0.2)));
+    bgKey = '';
   }
 
-  function getPixelScale() { return PIXEL_SCALE; }
-  function getAnimFrame() { return animFrame; }
-  function getCanvas() { return canvas; }
-  function getCtx() { return ctx; }
+  // 世界坐标
+  function mousePos() { return { x: Math.floor(W * 0.34), y: groundY }; }
+  function monsterPos() { return { x: Math.floor(W * 0.68), y: groundY }; }
+  // 世界 → 屏幕(CSS像素)
+  function toScreen(x, y) { return { x: x * PX, y: y * PX }; }
 
-  // ========== 背景绘制 ==========
-  function drawBackground() {
-    const w = canvas.width, h = canvas.height;
-    const gs = GameEngine.getState();
-    const ri = gs ? gs.realmIndex : 0;
+  // ========== 工具 ==========
+  function rng(seed) { let s = seed * 9301 + 49297; return () => ((s = (s * 9301 + 49297) % 233280) / 233280); }
+  function prect(c, x, y, w, h, col) { c.fillStyle = col; c.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); }
+  function lerpColor(a, b, t) {
+    const pa = hex(a), pb = hex(b);
+    const r = Math.round(pa[0] + (pb[0] - pa[0]) * t), g = Math.round(pa[1] + (pb[1] - pa[1]) * t), bl = Math.round(pa[2] + (pb[2] - pa[2]) * t);
+    return `rgb(${r},${g},${bl})`;
+  }
+  function hex(c) { const h = c.replace('#', ''); return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; }
 
-    // === 日夜循环 ===
-    dayNightPhase = (dayNightPhase + DAY_CYCLE_SPEED) % 1;
-    const dayBrightness = Math.max(0, Math.sin(dayNightPhase * Math.PI * 2 - Math.PI/2)) * 0.5 + 0.5;
-    const isNight = dayNightPhase < 0.2 || dayNightPhase > 0.85;
-    const isDusk = dayNightPhase > 0.7 && dayNightPhase < 0.85;
-    const isDawn = dayNightPhase > 0.2 && dayNightPhase < 0.35;
-
-    // 境界背景色方案
-    const bgThemes = [
-      { sky: ['#0a0a2e','#1a1a4e','#1a2a3a','#0d1a0d'], ground: '#1a2a1a', grass: '#223322', hill: '#0d1a2a' },
-      { sky: ['#0a1a2e','#1a2a5e','#2a3a4a','#1a2a1a'], ground: '#1a2a20', grass: '#2a3a2a', hill: '#0d1a3a' },
-      { sky: ['#0a2a1e','#1a3a3e','#1a3a3a','#0d2a0d'], ground: '#1a3a1a', grass: '#2a4a2a', hill: '#0d2a2a' },
-      { sky: ['#0a0a3e','#1a1a6e','#2a2a5a','#0d0d3a'], ground: '#1a1a3a', grass: '#2a2a4a', hill: '#0d0d4a' },
-      { sky: ['#1a0a2e','#2a1a4e','#3a1a3a','#1a0d2a'], ground: '#2a1a2a', grass: '#3a2a3a', hill: '#1a0d3a' },
-      { sky: ['#1a0a0a','#3a1a1a','#2a1a2a','#1a0d0d'], ground: '#2a1a1a', grass: '#3a2a2a', hill: '#1a0d1a' },
-    ];
-    const theme = bgThemes[ri] || bgThemes[0];
-
-    // 天空渐变
-    const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, theme.sky[0]); grad.addColorStop(0.5, theme.sky[1]);
-    grad.addColorStop(0.8, theme.sky[2]); grad.addColorStop(1, theme.sky[3]);
-    ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
-
-    // 日夜叠加色
-    if (isDusk || isDawn) {
-      ctx.globalAlpha = 0.15;
-      const duskGrad = ctx.createLinearGradient(0, 0, 0, h * 0.6);
-      duskGrad.addColorStop(0, isDawn ? '#FF8844' : '#FF4422');
-      duskGrad.addColorStop(1, 'transparent');
-      ctx.fillStyle = duskGrad; ctx.fillRect(0, 0, w, h * 0.6);
-      ctx.globalAlpha = 1;
-    }
-    if (isNight) {
-      ctx.globalAlpha = 0.2;
-      ctx.fillStyle = '#000022'; ctx.fillRect(0, 0, w, h);
-      ctx.globalAlpha = 1;
-    }
-
-    // 太阳/月亮
-    const celestialAngle = dayNightPhase * Math.PI * 2;
-    const sunX = w * 0.5 + Math.cos(celestialAngle - Math.PI/2) * w * 0.35;
-    const sunY = h * 0.35 - Math.sin(celestialAngle - Math.PI/2) * h * 0.3;
-    if (!isNight && sunY < h * 0.65) {
-      ctx.globalAlpha = 0.2 * dayBrightness;
-      ctx.fillStyle = '#FFD700';
-      ctx.beginPath(); ctx.arc(sunX, sunY, 20, 0, Math.PI*2); ctx.fill();
-      ctx.globalAlpha = 0.4 * dayBrightness;
-      ctx.beginPath(); ctx.arc(sunX, sunY, 10, 0, Math.PI*2); ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-    const moonX = w * 0.5 - Math.cos(celestialAngle - Math.PI/2) * w * 0.3;
-    const moonY = h * 0.25 + Math.sin(celestialAngle - Math.PI/2) * h * 0.2;
-    if (isNight && moonY < h * 0.6) {
-      ctx.globalAlpha = 0.25;
-      ctx.fillStyle = '#CCCCEE';
-      ctx.beginPath(); ctx.arc(moonX, moonY, 12, 0, Math.PI*2); ctx.fill();
-      ctx.globalAlpha = 0.1;
-      ctx.beginPath(); ctx.arc(moonX, moonY, 20, 0, Math.PI*2); ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-
-    // 星星
-    ctx.fillStyle = '#fff';
-    const starAlpha = isNight ? 0.5 : 0.15;
-    for (let i = 0; i < 40; i++) {
-      const sx = (i * 137.3) % w, sy = (i * 89.7) % (h * 0.45);
-      ctx.globalAlpha = starAlpha * (0.3 + Math.sin(animFrame * 0.015 + i * 0.7) * 0.7);
-      const sz = (i % 4 === 0) ? 2 : 1;
-      ctx.fillRect(sx, sy, sz, sz);
-    }
-    ctx.globalAlpha = 1;
-
-    // 高境界浮空仙山/云彩
-    if (ri >= 3) {
-      ctx.globalAlpha = 0.12;
-      ctx.fillStyle = ri >= 5 ? '#FF4444' : '#8888FF';
-      for (let i = 0; i < 3; i++) {
-        const cx = w * (0.15 + i * 0.35) + Math.sin(animFrame * 0.003 + i) * 20;
-        const cy = h * 0.2 + Math.cos(animFrame * 0.004 + i * 2) * 10;
-        ctx.beginPath(); ctx.ellipse(cx, cy, 60 + i * 20, 15 + i * 5, 0, 0, Math.PI*2); ctx.fill();
+  // 像素化的天空渐变（分带 + 棋盘抖动过渡）
+  function skyBands(c, stops, y0, y1) {
+    const n = stops.length - 1;
+    const bandH = (y1 - y0) / n;
+    for (let i = 0; i < n; i++) {
+      const top = Math.floor(y0 + i * bandH), bot = Math.floor(y0 + (i + 1) * bandH);
+      const steps = 4;
+      for (let s = 0; s < steps; s++) {
+        const yy = top + Math.floor((bot - top) * s / steps), hh = Math.ceil((bot - top) / steps);
+        prect(c, 0, yy, W, hh, lerpColor(stops[i], stops[i + 1], s / steps));
       }
-      ctx.globalAlpha = 1;
-    }
-
-    // 飘动云彩
-    ctx.globalAlpha = isNight ? 0.06 : 0.1;
-    ctx.fillStyle = isNight ? '#445566' : '#667788';
-    for (let i = 0; i < 4; i++) {
-      const cx = ((animFrame * 0.15 + i * 200) % (w + 200)) - 100;
-      const cy = h * 0.15 + i * 25;
-      ctx.beginPath(); ctx.ellipse(cx, cy, 50 + i * 15, 10 + i * 3, 0, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(cx + 30, cy - 5, 35 + i * 10, 8 + i * 2, 0, 0, Math.PI*2); ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-
-    // 山丘
-    ctx.fillStyle = theme.hill; ctx.beginPath(); ctx.moveTo(0, h * 0.6);
-    for (let x = 0; x <= w; x += 40) ctx.lineTo(x, h * 0.55 + Math.sin(x * 0.008) * 30 + Math.sin(x * 0.015) * 15);
-    ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.fill();
-
-    const groundY = h * 0.73;
-    ctx.fillStyle = theme.ground; ctx.fillRect(0, groundY, w, h - groundY);
-
-    // 场景小景
-    drawSceneryTree(ctx, w * 0.48, groundY, 0.7, theme);
-    drawSceneryTree(ctx, w * 0.12, groundY, 0.5, theme);
-    drawSceneryTree(ctx, w * 0.85, groundY, 0.6, theme);
-    drawSceneryRock(ctx, w * 0.55, groundY, 0.8, theme);
-    drawSceneryRock(ctx, w * 0.05, groundY + 2, 0.5, theme);
-
-    // 草地
-    ctx.fillStyle = theme.grass;
-    for (let x = 0; x < w; x += 12) {
-      const gh = 2 + (x * 7 % 5);
-      const sway = Math.sin(animFrame * 0.02 + x * 0.1) * 1;
-      ctx.fillRect(x + sway, groundY - gh, 6, gh);
-    }
-    ctx.fillStyle = theme.grass;
-    for (let x = 30; x < w; x += 80) { ctx.fillRect(x, groundY - 2, 8, 4); ctx.fillRect(x + 2, groundY - 4, 4, 2); }
-
-    // 连杀屏幕边缘发光
-    if (gs && gs.consecutiveKills >= 10) {
-      const intensity = Math.min(1, (gs.consecutiveKills - 10) / 40);
-      const pulse = 0.3 + Math.sin(animFrame * 0.06) * 0.2;
-      ctx.globalAlpha = intensity * pulse * 0.3;
-      const edgeColor = gs.consecutiveKills >= 50 ? '#FF4444' : gs.consecutiveKills >= 30 ? '#FFD700' : '#FF8844';
-      const edgeGrad = ctx.createLinearGradient(0, 0, 30, 0);
-      edgeGrad.addColorStop(0, edgeColor); edgeGrad.addColorStop(1, 'transparent');
-      ctx.fillStyle = edgeGrad; ctx.fillRect(0, 0, 30, h);
-      const edgeGrad2 = ctx.createLinearGradient(w, 0, w - 30, 0);
-      edgeGrad2.addColorStop(0, edgeColor); edgeGrad2.addColorStop(1, 'transparent');
-      ctx.fillStyle = edgeGrad2; ctx.fillRect(w - 30, 0, 30, h);
-      ctx.globalAlpha = 1;
-    }
-
-    return groundY;
-  }
-
-  // ========== 场景小景 ==========
-  function drawSceneryTree(ctx, x, groundY, scale, theme) {
-    ctx.globalAlpha = 0.3;
-    const s = scale * 2;
-    ctx.fillStyle = '#3a2a1a';
-    ctx.fillRect(x - 2*s, groundY - 12*s, 4*s, 12*s);
-    ctx.fillStyle = theme.grass;
-    for (let i = 0; i < 3; i++) {
-      const ty = groundY - (14 + i * 6)*s;
-      const tw = (10 - i * 2)*s;
-      ctx.beginPath();
-      ctx.moveTo(x, ty - 6*s);
-      ctx.lineTo(x - tw, ty);
-      ctx.lineTo(x + tw, ty);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  function drawSceneryRock(ctx, x, groundY, scale, theme) {
-    ctx.globalAlpha = 0.25;
-    const s = scale * 2;
-    ctx.fillStyle = '#2a2a3a';
-    ctx.beginPath();
-    ctx.moveTo(x - 5*s, groundY); ctx.lineTo(x - 4*s, groundY - 4*s);
-    ctx.lineTo(x - 1*s, groundY - 6*s); ctx.lineTo(x + 3*s, groundY - 5*s);
-    ctx.lineTo(x + 5*s, groundY - 2*s); ctx.lineTo(x + 5*s, groundY);
-    ctx.fill();
-    ctx.fillStyle = '#3a3a5a';
-    ctx.beginPath();
-    ctx.moveTo(x - 3*s, groundY - 3*s); ctx.lineTo(x - 1*s, groundY - 5*s);
-    ctx.lineTo(x + 2*s, groundY - 4*s); ctx.lineTo(x, groundY - 2*s);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-
-  // ========== 伤害数字 & 粒子 ==========
-  function addDamageText(x, y, text, color, big) {
-    let offsetY = 0;
-    for (const d of damageTexts) {
-      if (Math.abs(d.x - x) < 40 && Math.abs(d.y - y + offsetY) < 15 && d.life > 30) offsetY -= 16;
-    }
-    damageTexts.push({
-      x: x + (Math.random()-0.5)*20, y: y + offsetY, text, color,
-      life: 55, maxLife: 55, vy: -3.5, big,
-      scale: big ? 1.4 : 1.0, bounceCount: 0, baseY: y + offsetY,
-    });
-  }
-
-  function addCombatText(x, y, text, color) {
-    combatTexts.push({ x: x + (Math.random()-0.5)*30, y: y - 20, text, color, life: 25, maxLife: 25, scale: 1.5 });
-  }
-
-  function addParticles(x, y, color, count, spread) {
-    spread = spread || 4;
-    for (let i = 0; i < count; i++)
-      particles.push({ x, y, vx: (Math.random()-0.5)*spread, vy: (Math.random()-0.5)*spread-2, life: 25+Math.random()*25, color, size: 2+Math.random()*3 });
-  }
-
-  function addDeathExplosion(x, y) {
-    const colors = ['#FF4444','#FF8844','#FFCC44','#FFFFFF','#FF6666'];
-    for (let i = 0; i < 25; i++) {
-      const angle = Math.random()*Math.PI*2, speed = 2+Math.random()*5;
-      particles.push({ x, y, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed-1, life: 30+Math.random()*30, color: colors[Math.floor(Math.random()*colors.length)], size: 2+Math.random()*4 });
+      // 抖动过渡线
+      c.fillStyle = stops[i + 1];
+      for (let x = (i % 2); x < W; x += 2) c.fillRect(x, bot - 1, 1, 1);
     }
   }
 
-  function addBreakthroughEffect(x, y) {
-    const colors = ['#FFD700','#FFEE88','#FFFFFF','#FFA500'];
-    for (let i = 0; i < 50; i++) {
-      const angle = Math.random()*Math.PI*2, speed = 3+Math.random()*8;
-      particles.push({ x, y, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed, life: 50+Math.random()*50, color: colors[Math.floor(Math.random()*colors.length)], size: 3+Math.random()*5 });
+  function ridge(c, baseY, amp, freq, color, seed, rough) {
+    const r = rng(seed);
+    const p1 = r() * 100, p2 = r() * 100;
+    c.fillStyle = color;
+    for (let x = 0; x < W; x++) {
+      let y = baseY - (Math.sin(x * freq + p1) * 0.6 + Math.sin(x * freq * 2.3 + p2) * 0.3 + Math.sin(x * freq * 5.1) * 0.1 * (rough || 1)) * amp - amp * 0.3;
+      y = Math.round(y / 1) ;
+      c.fillRect(x, y, 1, H - y);
     }
-    const flash = document.getElementById('breakthroughFlash');
-    flash.classList.add('active');
-    setTimeout(() => flash.classList.remove('active'), 200);
   }
 
-  // ========== 环境粒子 ==========
-  function updateEnvParticles(w, h, ri) {
-    const spawnRate = 0.15;
-    if (Math.random() < spawnRate) {
-      const types = [
-        [{ type: 'firefly', color: '#88FF88', size: 2, speed: 0.3, life: 200 }],
-        [{ type: 'firefly', color: '#88FF88', size: 2, speed: 0.3, life: 200 }, { type: 'spirit', color: '#88CCFF', size: 1.5, speed: 0.5, life: 150 }],
-        [{ type: 'leaf', color: '#88AA44', size: 3, speed: 0.8, life: 180 }, { type: 'spirit', color: '#44FFAA', size: 2, speed: 0.4, life: 160 }],
-        [{ type: 'star', color: '#AAAAFF', size: 1.5, speed: 0.2, life: 250 }, { type: 'spirit', color: '#8888FF', size: 2, speed: 0.6, life: 120 }],
-        [{ type: 'ember', color: '#CC88FF', size: 2, speed: 0.7, life: 130 }, { type: 'spirit', color: '#FF88FF', size: 2.5, speed: 0.5, life: 140 }],
-        [{ type: 'ember', color: '#FF6644', size: 2.5, speed: 1.0, life: 100 }, { type: 'darkEnergy', color: '#FF4444', size: 3, speed: 0.3, life: 200 }],
-      ];
-      const pool = types[ri] || types[0];
-      const tmpl = pool[Math.floor(Math.random() * pool.length)];
-      envParticles.push({
-        type: tmpl.type,
-        x: Math.random() * w,
-        y: tmpl.type === 'leaf' ? -10 : Math.random() * h * 0.7,
-        vx: (Math.random() - 0.5) * tmpl.speed,
-        vy: tmpl.type === 'leaf' ? tmpl.speed : (Math.random() - 0.5) * tmpl.speed * 0.5,
-        life: tmpl.life + Math.random() * 50,
-        maxLife: tmpl.life + 50,
-        color: tmpl.color,
-        size: tmpl.size,
-        phase: Math.random() * Math.PI * 2,
+  function pixelCircle(c, cx, cy, r, color) {
+    c.fillStyle = color;
+    for (let y = -r; y <= r; y++) {
+      const w = Math.floor(Math.sqrt(r * r - y * y));
+      c.fillRect(Math.round(cx - w), Math.round(cy + y), w * 2 + 1, 1);
+    }
+  }
+
+  function pixelCloud(c, x, y, w, color, shade) {
+    const r = Math.max(2, Math.floor(w / 5));
+    pixelCircle(c, x + r, y, r, color);
+    pixelCircle(c, x + w * 0.45, y - r * 0.6, r * 1.4, color);
+    pixelCircle(c, x + w - r, y, r * 1.1, color);
+    prect(c, x + r, y, w - r * 2, r + 1, color);
+    if (shade) prect(c, x + r, y + r - 1, w - r * 2, 2, shade);
+  }
+
+  // ========== 场景 ==========
+  const SCENES = [
+    { // 0 黄枫谷：秋日山谷
+      sky: ['#4E6FB5', '#7FA6DA', '#B9D2EA', '#F4DDB0'], far: '#8FA3C8', mid: '#6E8E7A',
+      ground: '#5E9A45', groundDark: '#3F7233', dirt: '#6E4E33', dirtDark: '#553A26', grass: '#82C25A',
+      sun: '#FFF1C4', stars: false, props: 'maple',
+    },
+    { // 1 乱星海：落日海岸
+      sky: ['#2B2E6E', '#6A4C8E', '#D9776A', '#FFC58A'], far: '#5B4A7E', mid: '#3E3A6A',
+      ground: '#D9BE86', groundDark: '#B89A62', dirt: '#C9A870', dirtDark: '#A88A56', grass: '#E8D3A0',
+      sun: '#FFE3A8', stars: true, props: 'sea',
+    },
+    { // 2 天南竹海：雾中竹林
+      sky: ['#7FC4B8', '#A9DCCB', '#D8EEDD', '#EEF6E6'], far: '#A7CDB7', mid: '#7FB295',
+      ground: '#4E8C4A', groundDark: '#356A36', dirt: '#4A3A2A', dirtDark: '#3A2C20', grass: '#6DB05E',
+      sun: '#FFFFFF', stars: false, props: 'bamboo',
+    },
+    { // 3 星宫：星夜仙宫
+      sky: ['#070A24', '#141A4A', '#26306E', '#3E4C8E'], far: '#1C2356', mid: '#141A40',
+      ground: '#5A6AA0', groundDark: '#3E4A7E', dirt: '#2E3868', dirtDark: '#222A52', grass: '#7C8CC8',
+      sun: '#E8ECFF', stars: true, props: 'palace', night: true,
+    },
+    { // 4 灵界：紫霞浮岛
+      sky: ['#1E0F3A', '#4B2A7A', '#9A5AB8', '#E6A6D6'], far: '#6A4A9A', mid: '#4A3078',
+      ground: '#7A5AB0', groundDark: '#5A3E8A', dirt: '#3E2A62', dirtDark: '#2E1E4A', grass: '#A88AE0',
+      sun: '#FFE0FF', stars: true, props: 'isles',
+    },
+    { // 5 真仙界：金霞天门
+      sky: ['#3A0E2A', '#8E2A3E', '#E07A4A', '#FFE0A0'], far: '#C0604A', mid: '#8E3A3A',
+      ground: '#F2E8D8', groundDark: '#CFC0A8', dirt: '#B8A48A', dirtDark: '#978468', grass: '#FFF6E6',
+      sun: '#FFF6D0', stars: true, props: 'heaven',
+    },
+  ];
+
+  function buildBackground(ri) {
+    const sc = SCENES[ri] || SCENES[0];
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const b = c.getContext('2d');
+    const gy = groundY;
+    skyBands(b, sc.sky, 0, gy + 2);
+    const r = rng(ri * 17 + 3);
+
+    if (sc.stars) {
+      for (let i = 0; i < W * 0.35; i++) {
+        const x = Math.floor(r() * W), y = Math.floor(r() * gy * 0.55);
+        b.fillStyle = r() > 0.8 ? '#FFFFFF' : 'rgba(255,255,255,0.55)';
+        b.fillRect(x, y, 1, 1);
+      }
+    }
+
+    // 天体
+    if (sc.props === 'palace') {
+      pixelCircle(b, W * 0.82, gy * 0.22, 9, '#E8ECFF'); pixelCircle(b, W * 0.82 + 3, gy * 0.22 - 2, 8, sc.sky[0]);
+    } else if (sc.props === 'sea') {
+      pixelCircle(b, W * 0.64, gy * 0.62, 14, '#FFB070'); pixelCircle(b, W * 0.64, gy * 0.62, 11, '#FFD9A0');
+    } else if (sc.props === 'heaven') {
+      pixelCircle(b, W * 0.5, gy * 0.35, 18, '#FFE6A8'); pixelCircle(b, W * 0.5, gy * 0.35, 14, '#FFF6D8');
+    } else if (sc.props === 'maple' || sc.props === 'bamboo') {
+      pixelCircle(b, W * 0.8, gy * 0.2, 8, sc.sun);
+    }
+
+    // 远山
+    ridge(b, gy * 0.72, gy * 0.22, 0.02, sc.far, ri + 1, 1.5);
+
+    // 场景道具（中景）
+    const props = {
+      maple() {
+        ridge(b, gy * 0.9, gy * 0.12, 0.035, sc.mid, ri + 7);
+        const trees = [0.06, 0.16, 0.48, 0.58, 0.9, 0.98];
+        trees.forEach((t, i) => drawMaple(b, Math.floor(W * t), gy + 1, 10 + (i % 3) * 3, i));
+      },
+      sea() {
+        // 海面
+        const seaTop = Math.floor(gy * 0.7);
+        prect(b, 0, seaTop, W, gy - seaTop, '#3E5A9A');
+        for (let y = seaTop; y < gy; y += 3) {
+          b.fillStyle = y % 2 ? '#5A78B8' : '#35508C';
+          for (let x = (y * 7) % 11; x < W; x += 11) b.fillRect(x, y, 5, 1);
+        }
+        prect(b, Math.floor(W * 0.64) - 12, seaTop, 24, 1, '#FFD9A0');
+        prect(b, Math.floor(W * 0.64) - 7, seaTop + 3, 14, 1, '#FFB070');
+        // 远岛
+        [[0.15, 18], [0.36, 10], [0.86, 22]].forEach(([t, w]) => {
+          const x = Math.floor(W * t);
+          for (let i = 0; i < w; i++) { const h = Math.floor(Math.sin(i / w * Math.PI) * w * 0.35) + 1; prect(b, x + i, seaTop - h, 1, h, '#2E2A58'); }
+        });
+        // 礁石
+        drawRock(b, Math.floor(W * 0.08), gy + 1, 7, '#8E7A6A', '#6A5A4E');
+        drawRock(b, Math.floor(W * 0.93), gy + 1, 9, '#8E7A6A', '#6A5A4E');
+      },
+      bamboo() {
+        ridge(b, gy * 0.86, gy * 0.14, 0.03, sc.mid, ri + 5);
+        // 雾
+        b.fillStyle = 'rgba(255,255,255,0.35)'; b.fillRect(0, Math.floor(gy * 0.78), W, 6);
+        for (let i = 0; i < 9; i++) drawBamboo(b, Math.floor(W * (0.02 + i * 0.12 + (i % 2) * 0.03)), gy + 1, Math.floor(gy * (0.55 + (i % 3) * 0.12)), i % 2 ? '#5E9E5A' : '#4C8A4A');
+      },
+      palace() {
+        ridge(b, gy * 0.88, gy * 0.1, 0.025, sc.mid, ri + 9);
+        drawPalace(b, Math.floor(W * 0.5), Math.floor(gy * 0.62));
+        // 星河
+        for (let i = 0; i < W; i += 2) {
+          const y = Math.floor(gy * 0.15 + Math.sin(i * 0.02) * 10 + i * 0.12);
+          b.fillStyle = 'rgba(160,180,255,0.18)'; b.fillRect(i, y, 2, 4);
+        }
+        drawLantern(b, Math.floor(W * 0.1), gy - 1); drawLantern(b, Math.floor(W * 0.92), gy - 1);
+      },
+      isles() {
+        ridge(b, gy * 0.9, gy * 0.08, 0.03, sc.mid, ri + 11);
+        [[0.18, 0.3, 26], [0.55, 0.18, 18], [0.86, 0.42, 30]].forEach(([tx, ty, w], i) => drawIsle(b, Math.floor(W * tx), Math.floor(gy * ty), w, i));
+        drawCrystal(b, Math.floor(W * 0.05), gy + 1, '#E6A6FF'); drawCrystal(b, Math.floor(W * 0.95), gy + 1, '#A6E6FF');
+      },
+      heaven() {
+        for (let i = 0; i < 6; i++) pixelCloud(b, Math.floor(W * (i / 6) - 10), Math.floor(gy * (0.7 + (i % 2) * 0.08)), 40, '#FFE6C8', '#F2C8A0');
+        drawGate(b, Math.floor(W * 0.5), gy + 1);
+      },
+    };
+    props[sc.props]();
+
+    // 地面
+    prect(b, 0, gy, W, H - gy, sc.dirt);
+    prect(b, 0, gy, W, 3, sc.ground);
+    prect(b, 0, gy + 3, W, 1, sc.groundDark);
+    const rr = rng(ri * 31 + 7);
+    for (let i = 0; i < W * 0.6; i++) {
+      const x = Math.floor(rr() * W), y = gy + 5 + Math.floor(rr() * (H - gy - 5));
+      b.fillStyle = rr() > 0.5 ? sc.dirtDark : sc.groundDark;
+      b.fillRect(x, y, rr() > 0.7 ? 2 : 1, 1);
+    }
+    if (sc.props === 'heaven') { // 白玉台阶金边
+      prect(b, 0, gy + 3, W, 1, '#E0B84A');
+      for (let x = 0; x < W; x += 16) prect(b, x, gy + 4, 1, H - gy, '#D8CBB4');
+    }
+    if (sc.props === 'palace') { for (let x = 0; x < W; x += 12) prect(b, x, gy + 4, 1, H - gy, '#26305E'); }
+    return c;
+  }
+
+  function drawMaple(b, x, gy, size, seed) {
+    const r = rng(seed + 40);
+    prect(b, x - 1, gy - size, 2, size, '#5A3A26');
+    prect(b, x - 3, gy - Math.floor(size * 0.6), 2, 1, '#5A3A26');
+    const cols = ['#F2A33A', '#E0662E', '#F6C84A', '#C9482A'];
+    for (let i = 0; i < 5; i++) {
+      pixelCircle(b, x + Math.floor((r() - 0.5) * size), gy - size - Math.floor(r() * size * 0.5), Math.floor(size * 0.35 + r() * 2), cols[i % cols.length]);
+    }
+    for (let i = 0; i < 6; i++) { b.fillStyle = cols[i % 4]; b.fillRect(x - size + Math.floor(r() * size * 2), gy - Math.floor(r() * 2), 1, 1); }
+  }
+  function drawRock(b, x, gy, s, c1, c2) {
+    for (let i = 0; i < s * 2; i++) { const h = Math.floor(Math.sin(i / (s * 2) * Math.PI) * s * 0.8) + 1; prect(b, x - s + i, gy - h, 1, h, i < s ? c1 : c2); }
+  }
+  function drawBamboo(b, x, gy, h, col) {
+    prect(b, x, gy - h, 3, h, col);
+    prect(b, x + 2, gy - h, 1, h, '#3A6A36');
+    for (let y = gy - h + 6; y < gy; y += 9) prect(b, x - 1, y, 5, 1, '#8ACB7A');
+    for (let k = 0; k < 4; k++) {
+      const ly = gy - h + 4 + k * 12, dir = k % 2 ? 1 : -1;
+      for (let i = 0; i < 6; i++) b.fillStyle = '#6DB05E', b.fillRect(x + 1 + dir * (2 + i), ly + Math.floor(i / 2), 1, 1);
+    }
+  }
+  function drawPalace(b, cx, y) {
+    const c1 = '#232A5E', c2 = '#2E3874', lit = '#FFD86A';
+    prect(b, cx - 34, y + 14, 68, 18, c1);
+    prect(b, cx - 40, y + 10, 80, 4, c2); prect(b, cx - 44, y + 12, 4, 2, c2); prect(b, cx + 40, y + 12, 4, 2, c2);
+    prect(b, cx - 24, y - 2, 48, 12, c1);
+    prect(b, cx - 30, y - 6, 60, 4, c2); prect(b, cx - 33, y - 4, 3, 2, c2); prect(b, cx + 30, y - 4, 3, 2, c2);
+    prect(b, cx - 12, y - 16, 24, 10, c1);
+    prect(b, cx - 17, y - 19, 34, 3, c2);
+    prect(b, cx - 1, y - 24, 2, 5, lit);
+    for (let i = -3; i <= 3; i++) prect(b, cx + i * 9 - 1, y + 19, 3, 4, lit);
+    for (let i = -2; i <= 2; i++) prect(b, cx + i * 8 - 1, y + 2, 2, 3, lit);
+    prect(b, cx - 3, y - 12, 6, 3, lit);
+    // 云托
+    pixelCloud(b, cx - 50, y + 32, 40, '#3E4C8E'); pixelCloud(b, cx + 10, y + 34, 44, '#3E4C8E');
+  }
+  function drawLantern(b, x, gy) {
+    prect(b, x, gy - 20, 1, 20, '#3A3A5A');
+    prect(b, x - 3, gy - 24, 7, 6, '#FF6A4A'); prect(b, x - 2, gy - 23, 5, 4, '#FFB06A'); prect(b, x - 1, gy - 25, 3, 1, '#3A3A5A');
+  }
+  function drawIsle(b, x, y, w, seed) {
+    const r = rng(seed + 90);
+    prect(b, x - w / 2, y, w, 3, '#8E6AC8');
+    prect(b, x - w / 2, y + 3, w, 2, '#5A3E8A');
+    for (let i = 0; i < w; i++) { const d = Math.floor(Math.sin(i / w * Math.PI) * w * 0.4 * (0.7 + r() * 0.3)); prect(b, x - w / 2 + i, y + 5, 1, d, i % 3 ? '#3E2A62' : '#4A3474'); }
+    prect(b, x + w * 0.2, y + 5, 2, w * 0.9, 'rgba(180,220,255,0.55)'); // 瀑布
+    pixelCircle(b, x - w * 0.2, y - 3, 4, '#B69AF0'); prect(b, x - w * 0.2, y - 2, 1, 3, '#5A3E8A');
+  }
+  function drawCrystal(b, x, gy, col) {
+    for (let i = 0; i < 6; i++) prect(b, x - i, gy - 16 + i * 2, i * 2 + 1, 2, col);
+    prect(b, x - 5, gy - 4, 11, 4, col);
+    prect(b, x - 1, gy - 14, 1, 10, '#FFFFFF');
+  }
+  function drawGate(b, cx, gy) {
+    const red = '#C2383A', dark = '#8E2228', gold = '#FFD24A';
+    prect(b, cx - 44, gy - 60, 6, 60, red); prect(b, cx + 38, gy - 60, 6, 60, red);
+    prect(b, cx - 44, gy - 60, 2, 60, dark); prect(b, cx + 38, gy - 60, 2, 60, dark);
+    prect(b, cx - 56, gy - 66, 112, 6, dark); prect(b, cx - 60, gy - 70, 120, 4, red);
+    prect(b, cx - 62, gy - 72, 4, 2, red); prect(b, cx + 58, gy - 72, 4, 2, red);
+    prect(b, cx - 48, gy - 52, 96, 4, red);
+    prect(b, cx - 10, gy - 64, 20, 10, gold); prect(b, cx - 8, gy - 62, 16, 6, dark);
+    prect(b, cx - 4, gy - 60, 8, 2, gold);
+  }
+
+  // ========== 动态背景元素 ==========
+  const driftClouds = [];
+  function drawAmbient(gs) {
+    const ri = gs.realmIndex;
+    const sc = SCENES[ri] || SCENES[0];
+    // 漂浮云
+    if (driftClouds.length === 0) for (let i = 0; i < 4; i++) driftClouds.push({ x: Math.random() * W, y: 6 + Math.random() * H * 0.3, w: 20 + Math.random() * 26, v: 0.03 + Math.random() * 0.05 });
+    const cloudCol = ['#DCE8F6', '#C98AA0', '#F4FBF4', '#2E3A78', '#B98AD8', '#FFE2C0'][ri] || '#FFFFFF';
+    const cloudShade = ['#B9CCE6', '#A86A88', '#D6EBDD', '#243064', '#9A6AC0', '#F2C49A'][ri] || '#DDDDDD';
+    for (const c of driftClouds) {
+      c.x += c.v; if (c.x > W + 30) { c.x = -c.w - 10; c.y = 6 + Math.random() * H * 0.3; }
+      pixelCloud(wctx, Math.round(c.x), Math.round(c.y), Math.round(c.w), cloudCol, cloudShade);
+    }
+    // 星星闪烁
+    if (sc.stars) {
+      for (let i = 0; i < 10; i++) {
+        const x = (i * 97 + 13) % W, y = (i * 53 + 7) % Math.floor(groundY * 0.5);
+        if (Math.sin(animFrame * 0.05 + i * 1.7) > 0.6) { wctx.fillStyle = '#FFFFFF'; wctx.fillRect(x - 1, y, 3, 1); wctx.fillRect(x, y - 1, 1, 3); }
+      }
+    }
+    // 海面波光
+    if (sc.props === 'sea') {
+      const seaTop = Math.floor(groundY * 0.7);
+      for (let i = 0; i < 8; i++) {
+        const x = (i * 41 + Math.floor(animFrame * 0.2)) % W, y = seaTop + 2 + (i * 5) % (groundY - seaTop - 2);
+        wctx.fillStyle = 'rgba(255,230,190,0.7)'; wctx.fillRect(x, y, 3, 1);
+      }
+    }
+    // 草丛摇曳
+    wctx.fillStyle = sc.grass;
+    for (let x = 3; x < W; x += 7) {
+      const sway = Math.sin(animFrame * 0.04 + x * 0.3) > 0.3 ? 1 : 0;
+      wctx.fillRect(x + sway, groundY - 2, 1, 2); wctx.fillRect(x + 2, groundY - 1, 1, 1);
+    }
+  }
+
+  // 环境粒子（萤火/灵气/落叶/星光/紫焰/金屑）
+  let env = [];
+  function updateEnv(ri) {
+    const kinds = [
+      { col: ['#F2A33A', '#E0662E', '#F6C84A'], type: 'leaf' },
+      { col: ['#FFE3A8', '#BFE8FF'], type: 'spark' },
+      { col: ['#C8FFB0', '#FFFFFF'], type: 'firefly' },
+      { col: ['#BFD0FF', '#FFFFFF'], type: 'spark' },
+      { col: ['#F0A6FF', '#C9A2FF'], type: 'rise' },
+      { col: ['#FFE08A', '#FFFFFF'], type: 'rise' },
+    ][ri] || { col: ['#FFFFFF'], type: 'spark' };
+    if (Math.random() < 0.12 && env.length < 30) {
+      env.push({
+        x: Math.random() * W, y: kinds.type === 'leaf' ? -2 : Math.random() * groundY,
+        vx: kinds.type === 'leaf' ? 0.15 + Math.random() * 0.2 : (Math.random() - 0.5) * 0.15,
+        vy: kinds.type === 'leaf' ? 0.2 + Math.random() * 0.15 : kinds.type === 'rise' ? -0.15 - Math.random() * 0.1 : (Math.random() - 0.5) * 0.08,
+        life: 300 + Math.random() * 200, col: kinds.col[Math.floor(Math.random() * kinds.col.length)], type: kinds.type, ph: Math.random() * 6,
       });
     }
-    if (envParticles.length > 40) envParticles.splice(0, envParticles.length - 40);
-  }
-
-  function drawEnvParticles() {
-    for (let i = envParticles.length - 1; i >= 0; i--) {
-      const p = envParticles[i];
-      p.x += p.vx; p.y += p.vy; p.life--;
-      if (p.life <= 0 || p.x < -20 || p.x > canvas.width + 20 || p.y > canvas.height + 20) {
-        envParticles.splice(i, 1); continue;
-      }
-      const alpha = Math.min(1, p.life / p.maxLife) * 0.6;
-      ctx.globalAlpha = alpha;
-
-      switch (p.type) {
-        case 'firefly':
-          const flicker = 0.5 + Math.sin(animFrame * 0.1 + p.phase) * 0.5;
-          ctx.globalAlpha = alpha * flicker;
-          ctx.fillStyle = p.color;
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
-          ctx.globalAlpha = alpha * flicker * 0.3;
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 3, 0, Math.PI*2); ctx.fill();
-          break;
-        case 'spirit':
-          p.x += Math.sin(animFrame * 0.02 + p.phase) * 0.5;
-          p.y -= 0.3;
-          ctx.fillStyle = p.color;
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
-          break;
-        case 'leaf':
-          p.x += Math.sin(animFrame * 0.03 + p.phase) * 0.8;
-          ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(animFrame * 0.02 + p.phase);
-          ctx.fillStyle = p.color; ctx.fillRect(-p.size/2, -p.size/4, p.size, p.size/2);
-          ctx.restore();
-          break;
-        case 'star':
-          const twinkle = 0.3 + Math.sin(animFrame * 0.08 + p.phase) * 0.7;
-          ctx.globalAlpha = alpha * twinkle;
-          ctx.fillStyle = p.color;
-          ctx.fillRect(p.x - 0.5, p.y - 0.5, 1, 1);
-          ctx.fillRect(p.x - 1.5, p.y, 3, 1);
-          ctx.fillRect(p.x, p.y - 1.5, 1, 3);
-          break;
-        case 'ember':
-          p.y -= 0.5; p.x += Math.sin(animFrame * 0.05 + p.phase) * 0.3;
-          ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.size, p.size);
-          break;
-        case 'darkEnergy':
-          p.x += Math.sin(animFrame * 0.01 + p.phase) * 0.8;
-          p.y += Math.cos(animFrame * 0.015 + p.phase) * 0.5;
-          ctx.fillStyle = p.color;
-          ctx.globalAlpha = alpha * 0.4;
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 2, 0, Math.PI*2); ctx.fill();
-          ctx.globalAlpha = alpha * 0.8;
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
-          break;
-      }
+    for (let i = env.length - 1; i >= 0; i--) {
+      const p = env[i];
+      p.x += p.vx + (p.type === 'leaf' ? Math.sin(animFrame * 0.05 + p.ph) * 0.2 : 0); p.y += p.vy; p.life--;
+      if (p.life <= 0 || p.y > groundY + 2 || p.y < -4 || p.x > W + 4) { env.splice(i, 1); continue; }
+      if (p.type === 'firefly' && Math.sin(animFrame * 0.08 + p.ph) < 0) continue;
+      wctx.fillStyle = p.col;
+      wctx.fillRect(Math.round(p.x), Math.round(p.y), p.type === 'leaf' ? 2 : 1, 1);
     }
-    ctx.globalAlpha = 1;
   }
 
-  // ========== 技能特效 ==========
-  function addSkillEffect(skillId, fromX, fromY, toX, toY) {
-    const effects = {
-      'basic_sword': { type: 'slash', color: '#AACCFF', size: 30, life: 15 },
-      'body_refine': { type: 'aura', color: '#FFAA44', size: 20, life: 12 },
-      'iron_skin': { type: 'shield', color: '#88CCCC', size: 20, life: 10 },
-      'wind_slash': { type: 'wind', color: '#88FFCC', size: 35, life: 18 },
-      'golden_core': { type: 'orb', color: '#FFD700', size: 25, life: 20 },
-      'critical_eye': { type: 'flash', color: '#FF4444', size: 15, life: 8 },
-      'star_absorb': { type: 'drain', color: '#CC44FF', size: 30, life: 20 },
-      'wind_walk': { type: 'wind', color: '#88EEFF', size: 20, life: 12 },
-      'sky_break': { type: 'beam', color: '#FFD700', size: 40, life: 25 },
-      'treasure_sense': { type: 'sparkle', color: '#FFD700', size: 15, life: 15 },
-    };
-    const eff = effects[skillId] || { type: 'slash', color: '#FFFFFF', size: 20, life: 12 };
-    skillEffects.push({
-      ...eff, x: fromX, y: fromY, toX, toY,
-      maxLife: eff.life,
-      angle: Math.atan2(toY - fromY, toX - fromX),
-      progress: 0,
-    });
-  }
-
-  function drawSkillEffects() {
-    for (let i = skillEffects.length - 1; i >= 0; i--) {
-      const e = skillEffects[i];
-      e.life--; e.progress = 1 - (e.life / e.maxLife);
-      if (e.life <= 0) { skillEffects.splice(i, 1); continue; }
-
-      const alpha = Math.min(1, e.life / e.maxLife);
-      ctx.globalAlpha = alpha;
-      const cx = e.x + (e.toX - e.x) * e.progress;
-      const cy = e.y + (e.toY - e.y) * e.progress;
-
-      switch (e.type) {
-        case 'slash':
-          ctx.save(); ctx.translate(cx, cy); ctx.rotate(e.angle);
-          ctx.fillStyle = e.color;
-          ctx.fillRect(-e.size/2, -3, e.size * (1 - e.progress * 0.5), 6);
-          ctx.fillStyle = '#FFFFFF';
-          ctx.fillRect(-e.size/2, -1, e.size * 0.3, 2);
-          ctx.restore();
-          break;
-        case 'wind':
-          ctx.save(); ctx.translate(cx, cy); ctx.fillStyle = e.color;
-          for (let j = 0; j < 3; j++) {
-            const off = (j - 1) * 8;
-            ctx.globalAlpha = alpha * (0.5 + j * 0.15);
-            ctx.beginPath();
-            ctx.moveTo(-e.size/2, off);
-            ctx.quadraticCurveTo(0, off - 10, e.size/2, off);
-            ctx.quadraticCurveTo(0, off + 10, -e.size/2, off);
-            ctx.fill();
-          }
-          ctx.restore();
-          break;
-        case 'orb':
-          ctx.fillStyle = e.color;
-          ctx.globalAlpha = alpha * 0.4;
-          ctx.beginPath(); ctx.arc(cx, cy, e.size, 0, Math.PI*2); ctx.fill();
-          ctx.globalAlpha = alpha * 0.8;
-          ctx.beginPath(); ctx.arc(cx, cy, e.size * 0.5, 0, Math.PI*2); ctx.fill();
-          ctx.fillStyle = '#FFFFFF'; ctx.globalAlpha = alpha;
-          ctx.beginPath(); ctx.arc(cx, cy, e.size * 0.2, 0, Math.PI*2); ctx.fill();
-          break;
-        case 'beam':
-          ctx.strokeStyle = e.color; ctx.lineWidth = 4 * (1 - e.progress);
-          ctx.globalAlpha = alpha * 0.6;
-          ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.toX, e.toY); ctx.stroke();
-          ctx.lineWidth = 2; ctx.strokeStyle = '#FFFFFF'; ctx.globalAlpha = alpha;
-          ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.toX, e.toY); ctx.stroke();
-          ctx.fillStyle = e.color; ctx.globalAlpha = alpha * (1 - e.progress);
-          ctx.beginPath(); ctx.arc(e.toX, e.toY, e.size * (1-e.progress), 0, Math.PI*2); ctx.fill();
-          break;
-        case 'drain':
-          ctx.strokeStyle = e.color; ctx.lineWidth = 2;
-          for (let j = 0; j < 5; j++) {
-            const t = (e.progress + j * 0.15) % 1;
-            const sx = e.toX + (e.x - e.toX) * t;
-            const sy = e.toY + (e.y - e.toY) * t + Math.sin(t * Math.PI * 4 + j) * 15;
-            ctx.globalAlpha = alpha * (1 - t) * 0.7;
-            ctx.beginPath(); ctx.arc(sx, sy, 3, 0, Math.PI*2); ctx.fill();
-          }
-          break;
-        case 'flash':
-          ctx.fillStyle = e.color; ctx.globalAlpha = alpha * (1 - e.progress);
-          ctx.beginPath(); ctx.arc(cx, cy, e.size * (1 + e.progress), 0, Math.PI*2); ctx.fill();
-          break;
-        case 'aura': case 'shield': case 'sparkle':
-          ctx.fillStyle = e.color;
-          const sz = e.size * (0.5 + e.progress * 0.5);
-          ctx.globalAlpha = alpha * 0.5;
-          ctx.beginPath(); ctx.arc(e.x, e.y, sz, 0, Math.PI*2); ctx.fill();
-          break;
-      }
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  // ========== 灵兽弹道 ==========
-  function addBeastProjectile(fromX, fromY, toX, toY, templateId, damage) {
-    const colors = {
-      fire_cat: '#FF6633', ice_wolf: '#88CCFF', thunder_eagle: '#FFD700',
-      shadow_serpent: '#AA44FF', jade_dragon: '#44FFAA', phoenix: '#FF4444',
-    };
-    beastProjectiles.push({
-      x: fromX, y: fromY, toX, toY,
-      color: colors[templateId] || '#FFFFFF',
-      templateId, damage, progress: 0, life: 20, maxLife: 20,
-    });
-  }
-
-  function drawBeastProjectiles() {
-    for (let i = beastProjectiles.length - 1; i >= 0; i--) {
-      const p = beastProjectiles[i];
-      p.life--; p.progress = 1 - (p.life / p.maxLife);
-      if (p.life <= 0) { beastProjectiles.splice(i, 1); continue; }
-      const cx = p.x + (p.toX - p.x) * p.progress;
-      const cy = p.y + (p.toY - p.y) * p.progress;
-      const alpha = Math.min(1, p.life / p.maxLife);
-
-      ctx.globalAlpha = alpha * 0.3; ctx.fillStyle = p.color;
-      for (let j = 1; j <= 4; j++) {
-        const tx = cx - (p.toX - p.x) * 0.02 * j;
-        const ty = cy - (p.toY - p.y) * 0.02 * j;
-        ctx.beginPath(); ctx.arc(tx, ty, 4 - j, 0, Math.PI*2); ctx.fill();
-      }
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = '#FFFFFF';
-      ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = p.color;
-      ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI*2); ctx.fill();
-      if (p.progress > 0.9) {
-        ctx.globalAlpha = alpha * (1 - (p.progress - 0.9) * 10);
-        ctx.beginPath(); ctx.arc(p.toX, p.toY, 10 * (p.progress - 0.9) * 10, 0, Math.PI*2); ctx.fill();
-      }
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  // ========== 主渲染循环 ==========
-  function easeOutQuad(t) { return t*(2-t); }
-
-  function render() {
+  // ========== 主循环 ==========
+  let lastStep = 0;
+  function step() {
+    lastStep = performance.now();
     animFrame++;
-    const groundY = drawBackground();
     const gs = GameEngine.getState();
-    const ri = gs ? gs.realmIndex : 0;
-
-    updateEnvParticles(canvas.width, canvas.height, ri);
-    drawEnvParticles();
-
     if (gs) {
-      const mouseX = canvas.width * 0.25, mouseY = groundY - 10;
-      const monsterTargetX = canvas.width * 0.7;
-      const monsterX = monsterWalkIn < 1 ? (canvas.width + 50) + (monsterTargetX - canvas.width - 50) * easeOutQuad(monsterWalkIn) : monsterTargetX;
-      const monsterY = groundY - 10;
+      lastState = gs;
+      drawWorld(gs);
+      blit();
+      drawOverlay(gs);
+    }
+  }
+  function render() { step(); requestAnimationFrame(render); }
 
-      // 鼠鼠呼吸动画
-      const breathOffset = Math.sin(animFrame * 0.04) * 1.5;
-      const swayOffset = Math.sin(animFrame * 0.025) * 0.5;
-      ctx.globalAlpha = 0.15; ctx.fillStyle = '#000';
-      ctx.beginPath(); ctx.ellipse(mouseX, groundY+2, 25, 5, 0, 0, Math.PI*2); ctx.fill();
+  function blit() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    let sx = 0, sy = 0;
+    if (shake > 0) { sx = Math.round((Math.random() - 0.5) * shake) * PX; sy = Math.round((Math.random() - 0.5) * shake) * PX; shake *= 0.85; if (shake < 0.3) shake = 0; }
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(world, sx * DPR, sy * DPR, W * PX * DPR, H * PX * DPR);
+  }
 
-      // 角色内部运动偏移
-      let innerFloat = 0, innerAtkX = 0;
-      const atkVal = mouseAttackAnim > 0 ? mouseAttackAnim : 0;
-      if (gs.realmIndex === 0) {
-        innerAtkX = atkVal ? Math.sin(atkVal * 0.4) * 6 * PIXEL_SCALE : 0;
-      } else if (gs.realmIndex === 1) {
-        innerAtkX = atkVal ? Math.sin(atkVal * 0.4) * 8 * PIXEL_SCALE : 0;
-      } else if (gs.realmIndex === 2) {
-        innerFloat = Math.sin(animFrame * 0.04) * 2 * PIXEL_SCALE;
-        innerAtkX = atkVal ? Math.sin(atkVal * 0.4) * 10 * PIXEL_SCALE : 0;
-      } else if (gs.realmIndex === 3) {
-        innerFloat = Math.sin(animFrame * 0.04) * 3 * PIXEL_SCALE - 3 * PIXEL_SCALE;
-        innerAtkX = atkVal ? Math.sin(atkVal * 0.4) * 12 * PIXEL_SCALE : 0;
-      } else if (gs.realmIndex === 4) {
-        innerFloat = Math.sin(animFrame * 0.03) * 4 * PIXEL_SCALE - 6 * PIXEL_SCALE;
-        innerAtkX = atkVal ? Math.sin(atkVal * 0.4) * 14 * PIXEL_SCALE : 0;
-      } else if (gs.realmIndex === 5) {
-        innerFloat = Math.sin(animFrame * 0.03) * 5 * PIXEL_SCALE - 9 * PIXEL_SCALE;
-        innerAtkX = atkVal ? Math.sin(atkVal * 0.4) * 16 * PIXEL_SCALE : 0;
+  function mouseFloat(ri) {
+    return [0, 0, Math.sin(animFrame * 0.04) * 2, Math.sin(animFrame * 0.04) * 3 - 3, Math.sin(animFrame * 0.03) * 4 - 6, Math.sin(animFrame * 0.03) * 5 - 9][ri] || 0;
+  }
+
+  function drawWorld(gs) {
+    const ri = gs.realmIndex;
+    const key = `${ri}_${W}_${H}`;
+    if (key !== bgKey) { bgCache = buildBackground(ri); bgKey = key; }
+    wctx.imageSmoothingEnabled = false;
+    wctx.drawImage(bgCache, 0, 0);
+    drawAmbient(gs);
+    updateEnv(ri);
+
+    // 昼夜
+    const phase = (Date.now() / 480000) % 1;
+    const night = SCENES[ri].night ? 0 : Math.max(0, Math.cos(phase * Math.PI * 2)) * 0.28;
+    if (night > 0.01) { wctx.fillStyle = `rgba(10,12,40,${night})`; wctx.fillRect(0, 0, W, H); }
+
+    // 渡劫乌云
+    if (trib || gs.needTribulation) drawStormSky(gs);
+
+    const mp = mousePos(), op = monsterPos();
+    const fl = mouseFloat(ri);
+
+    // 影子
+    shadow(mp.x, groundY + 1, 9);
+
+    // 坐骑
+    const mount = gs.visualEquip && gs.visualEquip.mount;
+    const mountName = mount === '仙鹤' ? 'mount_crane' : mount === '麒麟' ? 'mount_qilin' : null;
+    let mouseY = groundY - 7;
+    if (mountName && !gs.isDead) {
+      const bob = Math.round(Math.sin(animFrame * 0.05) * 1);
+      const mSize = PixelArt.size(mountName);
+      PixelArt.draw(wctx, mountName, mp.x - 2, groundY + bob + Math.round(fl * 0.5), { frame: Math.floor(animFrame / 20) % 2 });
+      mouseY = groundY - (mountName === 'mount_crane' ? 19 : 20) + bob - 7 + Math.round(fl * 0.5) - Math.round(fl);
+      void mSize;
+    }
+
+    // 灵兽
+    if (gs.activeBeast && !gs.isDead) {
+      const mounted = !!mountName;
+      let bx = mp.x - (mounted ? 34 : 22), by = groundY + Math.round(Math.sin(animFrame * 0.06) * 1);
+      const flying = ['thunder_eagle', 'phoenix', 'jade_dragon'].includes(gs.activeBeast.templateId);
+      if (flying) by -= (mounted ? 30 : 16) + Math.round(Math.sin(animFrame * 0.05) * 2);
+      if (beastAtk > 0) {
+        const t = 1 - beastAtk / 18;
+        const k = t < 0.5 ? t * 2 : (1 - t) * 2;
+        bx += Math.round((op.x - 16 - bx) * k);
       }
+      PixelArt.draw(wctx, gs.activeBeast.templateId, bx, by, { frame: Math.floor(animFrame / 15) % 2 });
+    }
 
-      // 坐骑
-      if (gs.visualEquip && gs.visualEquip.mount && !gs.isDead) {
-        const mountBaseX = mouseX + swayOffset + innerAtkX;
-        const mountOffsetY = gs.visualEquip.mount === '仙鹤' ? 18 : 20;
-        const mountBaseY = mouseY + breathOffset + innerFloat + mountOffsetY;
-        ctx.save(); ctx.translate(mountBaseX, mountBaseY); ctx.scale(-1, 1);
-        if (gs.visualEquip.mount === '仙鹤') Sprites.drawMountCrane(ctx, 0, 0, PIXEL_SCALE, animFrame);
-        else if (gs.visualEquip.mount === '麒麟') Sprites.drawMountQilin(ctx, 0, 0, PIXEL_SCALE, animFrame);
-        ctx.restore();
-      }
+    // 护盾
+    const shieldOn = gs.shield && gs.shield.amount > 0;
 
-      // 鼠鼠
-      ctx.globalAlpha = gs.isDead ? 0.3 : 1;
-      Sprites.drawMouseByRealm(ctx, mouseX + swayOffset, mouseY + breathOffset, PIXEL_SCALE, gs.realmIndex, animFrame, mouseAttackAnim > 0 ? mouseAttackAnim : 0, {
-        hasActiveBeast: !!gs.activeBeast,
+    // 鼠鼠
+    if (!gs.isDead || Math.floor(animFrame / 6) % 2) {
+      wctx.save();
+      if (gs.isDead) wctx.globalAlpha = 0.35;
+      const hitX = mouseHit > 0 ? Math.round(-mouseHit * 0.4) : 0;
+      Sprites.drawMouseByRealm(wctx, mp.x + hitX, mouseY, 1, ri, animFrame, mouseAtk > 0 ? mouseAtk : 0, {
         equippedWeaponSkin: gs.equippedWeaponSkin || null,
         equippedArmorSkin: gs.equippedArmorSkin || null,
       });
-      ctx.globalAlpha = 1;
-
-      // 出战灵兽
-      if (gs.activeBeast && !gs.isDead) {
-        let petX = mouseX - 30, petY = mouseY + 5;
-        if (beastAttackAnim > 0) {
-          const atkProgress = 1 - (beastAttackAnim / 15);
-          if (atkProgress < 0.5) {
-            petX += (monsterX - petX) * atkProgress * 0.6;
-            petY += (monsterY - petY) * atkProgress * 0.3;
-          } else {
-            petX += (monsterX - petX) * (1 - atkProgress) * 0.6;
-            petY += (monsterY - petY) * (1 - atkProgress) * 0.3;
-          }
-        }
-        const floatY = Math.sin(animFrame * 0.04) * 2;
-        ctx.save(); ctx.translate(petX, petY + floatY); ctx.scale(-1, 1);
-        Sprites.drawActiveBeast(ctx, 0, 0, PIXEL_SCALE, gs.activeBeast.templateId, animFrame);
-        ctx.restore();
+      if (mouseHit > 4) { // 受击泛红
+        wctx.globalCompositeOperation = 'source-atop';
+        wctx.restore(); wctx.save();
       }
-
-      // 怪物
-      if (gs.currentMonster && monsterDeathAnim <= 0 && !gs.isDead) {
-        ctx.globalAlpha = 0.15; ctx.fillStyle = '#000';
-        ctx.beginPath(); ctx.ellipse(monsterX, groundY+2, 20, 4, 0, 0, Math.PI*2); ctx.fill();
-        ctx.globalAlpha = 1;
-
-        // 精英光环
-        if (gs.currentMonster.isElite) {
-          ctx.save(); ctx.translate(monsterX, monsterY);
-          ctx.globalAlpha = 0.15 + Math.sin(animFrame * 0.05) * 0.1;
-          ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2;
-          ctx.beginPath(); ctx.ellipse(0, 0, 35 + Math.sin(animFrame*0.03)*3, 35 + Math.sin(animFrame*0.03)*3, animFrame*0.01, 0, Math.PI*2); ctx.stroke();
-          ctx.globalAlpha = 0.2 + Math.sin(animFrame * 0.05) * 0.1;
-          ctx.fillStyle = '#FFD700';
-          ctx.beginPath(); ctx.ellipse(0, 0, 28, 28, 0, 0, Math.PI*2); ctx.fill();
-          ctx.restore(); ctx.globalAlpha = 1;
-        }
-
-        // 受击效果
-        const shakeX = monsterHitAnim > 0 ? (Math.random()-0.5) * monsterHitAnim * 1.5 : 0;
-        const shakeY = monsterHitAnim > 0 ? (Math.random()-0.5) * monsterHitAnim * 0.8 : 0;
-        if (monsterHitAnim > 5) {
-          ctx.globalAlpha = 0.2; ctx.fillStyle = '#FFFFFF';
-          ctx.beginPath(); ctx.arc(monsterX, monsterY - 40, 15, 0, Math.PI*2); ctx.fill();
-          ctx.globalAlpha = 1;
-        }
-
-        Sprites.drawMonsterByName(ctx, gs.currentMonster.name, monsterX + shakeX, monsterY + shakeY, PIXEL_SCALE, animFrame, monsterHitAnim);
-
-        // 血条 & 怪物信息
-        drawMonsterUI(gs, monsterX, monsterY);
-      }
-      if (monsterWalkIn < 1) monsterWalkIn = Math.min(1, monsterWalkIn + 0.04);
-
-      // 鼠鼠HP条
-      if (gs.computed && !gs.isDead) {
-        drawMouseHP(gs, mouseX, mouseY, breathOffset, innerFloat);
-      }
-
-      // 死亡文字
-      if (gs.isDead) {
-        ctx.font = 'bold 16px "Press Start 2P", monospace';
-        ctx.fillStyle = '#FF4444'; ctx.textAlign = 'center';
-        ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
-        const deathText = gs.reviveCountdown > 0 ? `复活 ${gs.reviveCountdown}s` : '复活中...';
-        ctx.strokeText(deathText, canvas.width / 2, canvas.height * 0.4);
-        ctx.fillText(deathText, canvas.width / 2, canvas.height * 0.4);
-      }
-
-      // 特效
-      drawSkillEffects();
-      drawBeastProjectiles();
-
-      // Mini-HUD
-      if (!gs.isDead) drawMiniHUD(gs);
+      wctx.restore();
     }
+    if (shieldOn) drawShield(mp.x, mouseY + fl - 4);
 
-    // 动画衰减
-    if (mouseAttackAnim > 0) mouseAttackAnim = Math.max(0, mouseAttackAnim - 0.4);
-    if (monsterHitAnim > 0) monsterHitAnim = Math.max(0, monsterHitAnim - 0.3);
-    if (monsterDeathAnim > 0) monsterDeathAnim = Math.max(0, monsterDeathAnim - 0.5);
-    if (beastAttackAnim > 0) beastAttackAnim = Math.max(0, beastAttackAnim - 1);
-
-    // 粒子更新
-    particles = particles.filter(p => {
-      p.x += p.vx; p.y += p.vy; p.vy += 0.08; p.life--;
-      ctx.globalAlpha = Math.max(0, p.life/50); ctx.fillStyle = p.color;
-      ctx.fillRect(Math.floor(p.x), Math.floor(p.y), p.size, p.size); ctx.globalAlpha = 1;
-      return p.life > 0;
-    });
-
-    // 伤害数字
-    damageTexts = damageTexts.filter(d => {
-      d.y += d.vy; d.vy += 0.06; d.life--;
-      if (d.vy > 0 && d.y > d.baseY && d.bounceCount < 2) { d.vy = -d.vy * 0.5; d.bounceCount++; }
-      const lifeRatio = d.life / d.maxLife;
-      const popScale = lifeRatio > 0.85 ? 1 + (lifeRatio - 0.85) * 6 : 1;
-      const finalScale = (d.scale || 1) * popScale;
-      ctx.globalAlpha = Math.max(0, Math.min(1, d.life / 20));
-      const baseSize = d.big ? 16 : 11;
-      const fontSize = Math.round(baseSize * finalScale);
-      ctx.font = `bold ${fontSize}px "Press Start 2P",monospace`;
-      ctx.fillStyle = d.color; ctx.textAlign = 'center';
-      ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
-      ctx.strokeText(d.text, d.x, d.y); ctx.fillText(d.text, d.x, d.y); ctx.globalAlpha = 1;
-      return d.life > 0;
-    });
-
-    // 文字音效
-    combatTexts = combatTexts.filter(ct => {
-      ct.life--; ct.y -= 0.5;
-      const ratio = ct.life / ct.maxLife;
-      ctx.globalAlpha = Math.max(0, ratio);
-      const sz = Math.round(10 * ct.scale * (0.5 + ratio * 0.5));
-      ctx.font = `bold ${sz}px sans-serif`;
-      ctx.fillStyle = ct.color; ctx.textAlign = 'center';
-      ctx.fillText(ct.text, ct.x, ct.y);
-      ctx.globalAlpha = 1;
-      return ct.life > 0;
-    });
-
-    requestAnimationFrame(render);
-  }
-
-  // ========== 辅助绘制 ==========
-  function drawMonsterUI(gs, monsterX, monsterY) {
+    // 怪物
     const m = gs.currentMonster;
-    const barW = 56, barH = 5;
-    const barX = monsterX - barW/2, barY = monsterY - 120;
-
-    ctx.fillStyle = '#222'; ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
-
-    if (m.hpBars > 1) {
-      const barColors = ['#ff4444', '#ff8844', '#ffcc44', '#44cc44', '#4488ff'];
-      const colorIdx = Math.min(m.currentBar - 1, barColors.length - 1);
-      ctx.fillStyle = '#333'; ctx.fillRect(barX, barY, barW, barH);
-      const hpPct = Math.max(0, m.hp / m.maxHp);
-      ctx.fillStyle = barColors[colorIdx];
-      ctx.fillRect(barX, barY, barW * hpPct, barH);
-      ctx.font = '8px "Press Start 2P", monospace';
-      ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
-      ctx.fillText(`x${m.currentBar}`, monsterX, barY - 2);
-    } else {
-      ctx.fillStyle = '#333'; ctx.fillRect(barX, barY, barW, barH);
-      const hpPct = Math.max(0, m.hp / m.maxHp);
-      ctx.fillStyle = hpPct > 0.5 ? '#44CC44' : hpPct > 0.2 ? '#DDAA44' : '#DD4444';
-      ctx.fillRect(barX, barY, barW * hpPct, barH);
-    }
-    ctx.strokeStyle = '#555'; ctx.strokeRect(barX - 1, barY - 1, barW + 2, barH + 2);
-
-    ctx.font = '8px sans-serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
-    ctx.fillText(GameEngine.formatNumber(Math.max(0, m.hp)), monsterX, barY + barH + 9);
-
-    ctx.font = 'bold 9px sans-serif';
-    ctx.fillStyle = m.isElite ? '#FFD700' : '#CCCCCC'; ctx.textAlign = 'center';
-    ctx.fillText((m.isElite ? '⭐ ' : '') + m.name, monsterX, barY + barH + 19);
-
-    if (m.isElite && m.hpBars > 1) {
-      ctx.font = 'bold 9px sans-serif'; ctx.fillStyle = '#FFD700'; ctx.textAlign = 'center';
-      ctx.fillText('精英', monsterX, barY - 10);
+    if (m && !gs.isDead && PixelArt.has(m.name)) {
+      if (monsterWalkIn < 1) monsterWalkIn = Math.min(1, monsterWalkIn + 0.05);
+      const walkOff = Math.round((1 - easeOut(monsterWalkIn)) * (W - op.x + 30));
+      const lunge = monsterLunge > 0 ? -Math.round(Math.sin((1 - monsterLunge / 12) * Math.PI) * 8) : 0;
+      const knock = monsterHit > 0 ? Math.round(monsterHit * 0.35) : 0;
+      const mx = op.x + walkOff + lunge + knock;
+      const sz = PixelArt.size(m.name);
+      shadow(mx, groundY + 1, Math.max(6, Math.floor(sz.w * 0.35)));
+      const frame = Math.floor(animFrame / (monsterWalkIn < 1 ? 6 : 22)) % 2;
+      if (m.isElite) drawEliteAura(m.name, mx, groundY, frame);
+      PixelArt.draw(wctx, m.name, mx, groundY, { frame, flash: monsterHit > 6 ? 0.85 : 0 });
+      m._screenX = mx; m._top = groundY - sz.ay;
     }
 
-    if (m.trait) {
-      const traitNames = {poison:'🟢毒',dodge:'💨闪避',thorns:'🌿荆棘',berserk:'🔴狂暴',slow:'❄️减速',burn:'🔥灼烧',critBoost:'💥会心',lifesteal:'🩸吸血',charm:'💜魅惑'};
-      const traitLabel = traitNames[m.trait] || '';
-      if (traitLabel) {
-        ctx.font = '9px sans-serif'; ctx.fillStyle = '#FF8888'; ctx.textAlign = 'center';
-        const traitY = barY - (m.hpBars > 1 ? 18 : (m.isElite ? 13 : 3));
-        ctx.fillText(traitLabel, monsterX, traitY);
+    // 正在消散的怪物像素
+    if (dying) {
+      dying.t++;
+      for (const p of dying.px) {
+        p.vy += 0.06; p.x += p.vx; p.y += p.vy;
+        if (p.y > groundY) { p.y = groundY; p.vy *= -0.3; p.vx *= 0.6; }
+        wctx.globalAlpha = Math.max(0, 1 - dying.t / 45);
+        wctx.fillStyle = p.color; wctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
+      }
+      wctx.globalAlpha = 1;
+      if (dying.t > 45) dying = null;
+    }
+
+    drawCoins();
+    drawEffects(gs);
+    drawParticles();
+    if (levelBeam > 0) drawLevelBeam(mp.x, mouseY);
+    if (trib) drawTribulation(gs, mp.x, mouseY);
+
+    // 全屏闪光
+    if (flash > 0) {
+      wctx.globalAlpha = Math.min(1, flash); wctx.fillStyle = flashColor; wctx.fillRect(0, 0, W, H); wctx.globalAlpha = 1;
+      flash -= 0.06;
+    }
+
+    // 衰减
+    if (mouseAtk > 0) mouseAtk = Math.max(0, mouseAtk - 0.5);
+    if (mouseHit > 0) mouseHit = Math.max(0, mouseHit - 0.5);
+    if (monsterHit > 0) monsterHit = Math.max(0, monsterHit - 0.5);
+    if (monsterLunge > 0) monsterLunge = Math.max(0, monsterLunge - 0.6);
+    if (beastAtk > 0) beastAtk = Math.max(0, beastAtk - 0.6);
+    if (levelBeam > 0) levelBeam--;
+  }
+
+  function easeOut(t) { return 1 - (1 - t) * (1 - t); }
+
+  function shadow(x, y, rx) {
+    wctx.fillStyle = 'rgba(0,0,0,0.22)';
+    wctx.fillRect(x - rx, y - 1, rx * 2, 2);
+    wctx.fillRect(x - rx + 2, y - 2, rx * 2 - 4, 1);
+  }
+
+  function drawEliteAura(name, x, y, frame) {
+    const sp = PixelArt.getSprite(name);
+    if (!sp) return;
+    const img = sp.flashes[frame % sp.flashes.length];
+    const pulse = 0.45 + Math.sin(animFrame * 0.1) * 0.25;
+    wctx.save();
+    wctx.globalAlpha = pulse;
+    // 金色描边光：白色剪影 + 叠色
+    const tmp = eliteTmp(img);
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) wctx.drawImage(tmp, x - sp.ax + dx, y - sp.ay + dy);
+    wctx.restore();
+  }
+  const eliteCache = new WeakMap();
+  function eliteTmp(img) {
+    if (eliteCache.has(img)) return eliteCache.get(img);
+    const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+    const x = c.getContext('2d'); x.drawImage(img, 0, 0); x.globalCompositeOperation = 'source-in'; x.fillStyle = '#FFD24A'; x.fillRect(0, 0, c.width, c.height);
+    eliteCache.set(img, c);
+    return c;
+  }
+
+  function drawShield(x, y) {
+    const r = 13 + Math.round(Math.sin(animFrame * 0.1));
+    wctx.fillStyle = 'rgba(255,216,107,0.18)';
+    for (let yy = -r; yy <= r; yy++) { const w = Math.floor(Math.sqrt(r * r - yy * yy)); wctx.fillRect(x - w, y + yy, w * 2 + 1, 1); }
+    wctx.fillStyle = 'rgba(255,230,140,0.9)';
+    for (let a = 0; a < 40; a++) {
+      const ang = a / 40 * Math.PI * 2 + animFrame * 0.02;
+      if ((a + Math.floor(animFrame / 4)) % 5 === 0) continue;
+      wctx.fillRect(Math.round(x + Math.cos(ang) * r), Math.round(y + Math.sin(ang) * r), 1, 1);
+    }
+  }
+
+  function drawLevelBeam(x, y) {
+    const a = levelBeam / 50;
+    wctx.fillStyle = `rgba(160,240,255,${0.35 * a})`;
+    wctx.fillRect(x - 6, 0, 13, groundY);
+    wctx.fillStyle = `rgba(255,255,255,${0.5 * a})`;
+    wctx.fillRect(x - 2, 0, 5, groundY);
+  }
+
+  // ========== 渡劫演出 ==========
+  function drawStormSky(gs) {
+    const k = trib ? Math.min(1, trib.t / 30) : 0.5 + Math.sin(animFrame * 0.03) * 0.1;
+    wctx.fillStyle = `rgba(20,8,40,${0.35 * k})`; wctx.fillRect(0, 0, W, H);
+    const mp = mousePos();
+    for (let i = 0; i < 6; i++) {
+      const cx = mp.x - 40 + i * 16 + Math.sin(animFrame * 0.01 + i) * 4;
+      pixelCloud(wctx, Math.round(cx), 8 + (i % 2) * 4, 26, `rgba(60,40,90,${0.8 * k})`, `rgba(30,20,50,${0.8 * k})`);
+    }
+    if (!trib && Math.random() < 0.01) { flash = 0.25; flashColor = '#C9A2FF'; }
+  }
+
+  function playTribulation(onResolve) {
+    trib = { t: 0, bolts: [], resolved: false, onResolve, result: null };
+    if (typeof Sound !== 'undefined') Sound.play('storm');
+  }
+
+  function drawTribulation(gs, x, y) {
+    trib.t++;
+    const strikeAt = [50, 85, 120];
+    strikeAt.forEach((t, i) => {
+      if (trib.t === t) {
+        trib.bolts.push({ life: 14, seed: Math.random() * 1000, big: i === 2 });
+        flash = i === 2 ? 0.9 : 0.6; flashColor = '#FFFFFF'; shake = i === 2 ? 10 : 6; mouseHit = 10;
+        addParticlesWorld(x, y - 6, '#FFF6A0', 16, 2.5);
+        if (typeof Sound !== 'undefined') Sound.play('thunder');
+      }
+    });
+    for (const b of trib.bolts) {
+      if (b.life-- <= 0) continue;
+      const r = rng(Math.floor(b.seed));
+      let px = x + Math.floor((r() - 0.5) * 30), py = 0;
+      wctx.fillStyle = b.life > 8 ? '#FFFFFF' : '#C9E8FF';
+      while (py < y - 4) {
+        const nx = px + Math.floor((r() - 0.5) * 8), ny = py + 4 + Math.floor(r() * 4);
+        const tx = nx + (x - nx) * (ny / y) * 0.5;
+        lineW(px, py, tx, ny, b.big ? 3 : 2);
+        px = tx; py = ny;
+      }
+      wctx.fillStyle = 'rgba(200,230,255,0.5)'; wctx.fillRect(x - 8, y - 12, 17, 14);
+    }
+    if (trib.t === 150 && !trib.resolved) {
+      trib.resolved = true;
+      const res = trib.onResolve ? trib.onResolve() : null;
+      trib.result = res;
+      if (res && res.success) {
+        flash = 1; flashColor = '#FFF6C8'; shake = 4;
+        addParticlesWorld(x, y - 8, '#FFD86A', 60, 3.5);
+        addParticlesWorld(x, y - 8, '#FFFFFF', 30, 2.5);
+        levelBeam = 90;
+      } else {
+        flash = 0.5; flashColor = '#FF4A6A'; shake = 8;
+        addParticlesWorld(x, y - 8, '#8A6AB0', 30, 3);
       }
     }
+    if (trib.t > 190) trib = null;
   }
 
-  function drawMouseHP(gs, mouseX, mouseY, breathOffset, innerFloat) {
-    const hpPct = gs.hp / gs.computed.maxHp;
-    const hpBarExtra = [0, 0, 8, 18, 28, 45][gs.realmIndex] || 0;
-    const barW = 56, barH = 5, barX = mouseX - barW/2, barY = mouseY + breathOffset + innerFloat - 45 - hpBarExtra;
-    ctx.fillStyle = '#222'; ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
-    ctx.fillStyle = '#333'; ctx.fillRect(barX, barY, barW, barH);
-    if (hpPct > 0) {
-      const grad = ctx.createLinearGradient(barX, barY, barX + barW * hpPct, barY);
-      if (hpPct > 0.5) { grad.addColorStop(0, '#44AA44'); grad.addColorStop(1, '#66CC66'); }
-      else if (hpPct > 0.2) { grad.addColorStop(0, '#CC8800'); grad.addColorStop(1, '#DDAA44'); }
-      else { grad.addColorStop(0, '#CC2222'); grad.addColorStop(1, '#DD4444'); }
-      ctx.fillStyle = grad;
-      ctx.fillRect(barX, barY, barW * Math.max(0, hpPct), barH);
+  function lineW(x0, y0, x1, y1, w) {
+    const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+    for (let i = 0; i <= steps; i++) {
+      const t = steps ? i / steps : 0;
+      wctx.fillRect(Math.round(x0 + (x1 - x0) * t) - Math.floor(w / 2), Math.round(y0 + (y1 - y0) * t), w, 1);
     }
-    ctx.strokeStyle = '#555'; ctx.strokeRect(barX - 1, barY - 1, barW + 2, barH + 2);
-    ctx.font = '8px sans-serif'; ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
-    ctx.fillText(`${Math.floor(hpPct * 100)}%`, mouseX, barY - 2);
   }
 
-  function drawMiniHUD(gs) {
-    const hudY = 6;
-    const hudBarW = Math.min(120, canvas.width * 0.3);
-    const hudBarX = canvas.width / 2 - hudBarW / 2;
-    ctx.fillStyle = '#000'; ctx.globalAlpha = 0.5;
-    ctx.fillRect(hudBarX - 1, hudY - 1, hudBarW + 2, 7);
+  // ========== 特效 ==========
+  function addEffect(e) { effects.push({ t: 0, ...e }); }
+
+  function drawEffects(gs) {
+    const mp = mousePos();
+    const m = gs.currentMonster;
+    const tx = m && m._screenX ? m._screenX : monsterPos().x;
+    const ty = groundY - 10;
+    for (let i = effects.length - 1; i >= 0; i--) {
+      const e = effects[i];
+      e.t++;
+      if (e.type === 'slash') {
+        const k = e.t / 8;
+        wctx.fillStyle = e.color || '#FFFFFF';
+        for (let a = 0; a < 10; a++) {
+          const ang = -1.2 + a * 0.25 + k * 0.4;
+          const r = 10 + (e.big ? 4 : 0);
+          wctx.fillRect(Math.round(tx - 2 + Math.cos(ang) * r * 0.6), Math.round(ty - 4 + Math.sin(ang) * r), e.big ? 2 : 1, 2);
+        }
+        if (e.t > 7) effects.splice(i, 1);
+      } else if (e.type === 'swordqi') {
+        const dur = 14;
+        const p = Math.min(1, e.t / dur);
+        const x = mp.x + 8 + (tx - mp.x - 8) * p;
+        wctx.fillStyle = '#E6FBFF';
+        for (let j = -6; j <= 6; j++) wctx.fillRect(Math.round(x - Math.abs(j) * 0.5), ty - 6 + j, 2, 1);
+        wctx.fillStyle = '#7FDFFF';
+        for (let j = -5; j <= 5; j++) wctx.fillRect(Math.round(x - 2 - Math.abs(j) * 0.5), ty - 6 + j, 1, 1);
+        wctx.fillStyle = 'rgba(160,230,255,0.35)'; wctx.fillRect(Math.round(x - 20), ty - 7, 18, 2);
+        if (e.t === dur) { addParticlesWorld(tx, ty - 6, '#BFF4FF', 18, 2.5); shake = Math.max(shake, 4); }
+        if (e.t > dur) effects.splice(i, 1);
+      } else if (e.type === 'myriad') {
+        if (!e.swords) e.swords = Array.from({ length: 16 }, (_, k) => ({ x: tx + (Math.random() - 0.5) * 36, d: k * 2 + Math.random() * 3, hit: false }));
+        let alive = false;
+        for (const s of e.swords) {
+          const tt = e.t - s.d;
+          if (tt < 0) { alive = true; continue; }
+          const y = -10 + tt * 9;
+          if (y < groundY - 4) {
+            alive = true;
+            wctx.fillStyle = '#E8D8FF'; wctx.fillRect(Math.round(s.x), Math.round(y), 1, 7);
+            wctx.fillStyle = '#C9A2FF'; wctx.fillRect(Math.round(s.x) - 1, Math.round(y) - 1, 3, 1);
+            wctx.fillStyle = 'rgba(200,170,255,0.4)'; wctx.fillRect(Math.round(s.x), Math.round(y) - 8, 1, 8);
+          } else if (!s.hit) { s.hit = true; addParticlesWorld(s.x, groundY - 4, '#C9A2FF', 4, 1.6); shake = Math.max(shake, 2); }
+        }
+        if (!alive) effects.splice(i, 1);
+      } else if (e.type === 'heal') {
+        wctx.fillStyle = '#7CF29A';
+        for (let k = 0; k < 6; k++) {
+          const x = mp.x - 10 + ((k * 7 + e.t) % 20), y = groundY - 4 - ((e.t * 0.8 + k * 9) % 28);
+          wctx.fillRect(x, y - 1, 1, 3); wctx.fillRect(x - 1, y, 3, 1);
+        }
+        if (e.t > 40) effects.splice(i, 1);
+      } else if (e.type === 'beam') {
+        wctx.fillStyle = e.color; wctx.globalAlpha = 1 - e.t / 16;
+        lineW(mp.x - 16, groundY - 8, tx, ty - 4, 2);
+        wctx.globalAlpha = 1;
+        if (e.t > 15) effects.splice(i, 1);
+      } else if (e.type === 'ring') {
+        const r = e.t * 1.5;
+        wctx.fillStyle = e.color; wctx.globalAlpha = Math.max(0, 1 - e.t / 20);
+        for (let a = 0; a < 32; a++) { const ang = a / 32 * Math.PI * 2; wctx.fillRect(Math.round(e.x + Math.cos(ang) * r), Math.round(e.y + Math.sin(ang) * r * 0.5), 1, 1); }
+        wctx.globalAlpha = 1;
+        if (e.t > 20) effects.splice(i, 1);
+      } else effects.splice(i, 1);
+    }
+  }
+
+  function addParticlesWorld(x, y, color, count, speed) {
+    speed = speed || 1.5;
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2, v = (0.3 + Math.random()) * speed;
+      particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - speed * 0.4, life: 25 + Math.random() * 25, color, g: 0.08 });
+    }
+  }
+
+  function drawParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx; p.y += p.vy; p.vy += p.g; p.life--;
+      if (p.y > groundY) { p.y = groundY; p.vy *= -0.3; p.vx *= 0.7; }
+      if (p.life <= 0) { particles.splice(i, 1); continue; }
+      wctx.globalAlpha = Math.min(1, p.life / 15);
+      wctx.fillStyle = p.color; wctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
+    }
+    wctx.globalAlpha = 1;
+    if (particles.length > 400) particles.splice(0, particles.length - 400);
+  }
+
+  function spawnCoins(x, y, n) {
+    for (let i = 0; i < n; i++) coins.push({ x, y, vx: (Math.random() - 0.5) * 1.6, vy: -1.5 - Math.random() * 1.2, life: 60 + Math.random() * 20 });
+  }
+  function drawCoins() {
+    for (let i = coins.length - 1; i >= 0; i--) {
+      const c = coins[i];
+      c.x += c.vx; c.y += c.vy; c.vy += 0.1; c.life--;
+      if (c.y > groundY - 1) { c.y = groundY - 1; c.vy *= -0.45; c.vx *= 0.7; }
+      if (c.life <= 0) { coins.splice(i, 1); continue; }
+      const blink = c.life < 20 && Math.floor(c.life / 3) % 2;
+      if (blink) continue;
+      wctx.fillStyle = '#FFD24A'; wctx.fillRect(Math.round(c.x) - 1, Math.round(c.y) - 1, 2, 2);
+      wctx.fillStyle = '#FFF6B0'; wctx.fillRect(Math.round(c.x) - 1, Math.round(c.y) - 1, 1, 1);
+    }
+  }
+
+  // ========== 高清界面层 ==========
+  function drawOverlay(gs) {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const m = gs.currentMonster;
+    if (m && !gs.isDead && m._screenX !== undefined && monsterWalkIn > 0.6) drawMonsterBar(m);
+    if (!gs.isDead) drawPlayerBar(gs);
+    drawTexts();
+  }
+
+  function drawMonsterBar(m) {
+    const s = toScreen(m._screenX, groundY);
+    const bw = 76, bh = 6;
+    const x = Math.round(s.x - bw / 2), y = Math.round(s.y + PX * 5 + 18);
+    // 名字
+    ctx.font = 'bold 12px "PingFang SC","Microsoft YaHei",sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    const name = (m.isElite ? '★ ' : '') + m.name;
+    const traitIcon = m.trait && GameEngine.TRAIT_INFO[m.trait] ? GameEngine.TRAIT_INFO[m.trait].icon + ' ' : '';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.strokeText(traitIcon + name, s.x, y - 5);
+    ctx.fillStyle = m.isElite ? '#FFD86A' : '#F2EEE6';
+    ctx.fillText(traitIcon + name, s.x, y - 5);
+    // 血条
+    ctx.fillStyle = 'rgba(10,8,20,0.85)'; ctx.fillRect(x - 2, y - 2, bw + 4, bh + 4);
+    ctx.fillStyle = '#3A2230'; ctx.fillRect(x, y, bw, bh);
+    const pct = Math.max(0, m.hp / m.maxHp);
+    const barCols = ['#E8485A', '#F08A3A', '#F2C84A', '#6AD06A', '#5AA8F0'];
+    ctx.fillStyle = m.hpBars > 1 ? barCols[Math.min(barCols.length - 1, m.currentBar - 1)] : (pct > 0.5 ? '#E8485A' : pct > 0.25 ? '#F08A3A' : '#FF5A5A');
+    if (m.hpBars > 1 && m.currentBar > 1) { ctx.fillStyle = '#3A2230'; ctx.fillRect(x, y, bw, bh); ctx.fillStyle = barCols[Math.min(barCols.length - 1, m.currentBar - 2)]; ctx.fillRect(x, y, bw, bh); ctx.fillStyle = barCols[Math.min(barCols.length - 1, m.currentBar - 1)]; }
+    ctx.fillRect(x, y, Math.round(bw * pct), bh);
+    ctx.fillStyle = 'rgba(255,255,255,0.25)'; ctx.fillRect(x, y, Math.round(bw * pct), 2);
+    if (m.hpBars > 1) {
+      ctx.font = 'bold 10px "Press Start 2P",monospace'; ctx.textAlign = 'left';
+      ctx.fillStyle = '#FFD86A'; ctx.fillText('×' + m.currentBar, x + bw + 5, y + 7);
+    }
+  }
+
+  function drawPlayerBar(gs) {
+    const mp = mousePos();
+    const s = toScreen(mp.x, groundY);
+    const bw = 60, bh = 5;
+    const x = Math.round(s.x - bw / 2), y = Math.round(s.y + PX * 5 + 6);
+    ctx.font = 'bold 12px "PingFang SC","Microsoft YaHei",sans-serif'; ctx.textAlign = 'center';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.strokeText('鼠鼠', s.x, y - 6); ctx.fillStyle = '#E8F6FF'; ctx.fillText('鼠鼠', s.x, y - 6);
+    const pct = Math.max(0, gs.hp / gs.computed.maxHp);
+    ctx.fillStyle = 'rgba(10,8,20,0.85)'; ctx.fillRect(x - 2, y - 2, bw + 4, bh + 4);
+    ctx.fillStyle = '#233024'; ctx.fillRect(x, y, bw, bh);
+    ctx.fillStyle = pct > 0.5 ? '#5AD06A' : pct > 0.25 ? '#E8C84A' : '#E8485A';
+    ctx.fillRect(x, y, Math.round(bw * pct), bh);
+    if (gs.shield && gs.shield.amount > 0) {
+      const sp = Math.min(1, gs.shield.amount / gs.computed.maxHp);
+      ctx.fillStyle = '#FFD86A'; ctx.fillRect(x, y - 4, Math.round(bw * sp), 2);
+    }
+  }
+
+  // 伤害数字（屏幕坐标）
+  function addText(wx, wy, text, color, opts) {
+    opts = opts || {};
+    const s = toScreen(wx, wy);
+    let oy = 0;
+    for (const t of texts) if (Math.abs(t.x - s.x) < 50 && Math.abs(t.y0 - (s.y + oy)) < 16 && t.life > t.max - 16) oy -= 16;
+    texts.push({
+      x: s.x + (opts.jitter === false ? 0 : (Math.random() - 0.5) * 24), y: s.y + oy, y0: s.y + oy, text, color,
+      size: opts.size || 13, life: opts.life || 55, max: opts.life || 55, vy: opts.float ? -0.6 : -2.2, pixel: opts.pixel !== false, crit: !!opts.crit, stroke: opts.stroke,
+    });
+    if (texts.length > 60) texts.splice(0, texts.length - 60);
+  }
+
+  function drawTexts() {
+    for (let i = texts.length - 1; i >= 0; i--) {
+      const t = texts[i];
+      t.life--;
+      t.y += t.vy; t.vy = Math.min(0.8, t.vy + 0.09);
+      if (t.vy > 0 && t.y > t.y0) t.vy = 0;
+      if (t.life <= 0) { texts.splice(i, 1); continue; }
+      const age = t.max - t.life;
+      const pop = age < 5 ? 1 + (5 - age) * (t.crit ? 0.14 : 0.06) : 1;
+      ctx.globalAlpha = Math.min(1, t.life / 14);
+      const fs = Math.round(t.size * pop);
+      ctx.font = t.pixel ? `${fs}px "Press Start 2P",monospace` : `bold ${fs + 2}px "PingFang SC","Microsoft YaHei",sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = t.pixel ? 4 : 4; ctx.strokeStyle = t.stroke || 'rgba(10,6,18,0.9)'; ctx.lineJoin = 'round';
+      ctx.strokeText(t.text, t.x, t.y);
+      ctx.fillStyle = t.color; ctx.fillText(t.text, t.x, t.y);
+    }
     ctx.globalAlpha = 1;
-    ctx.fillStyle = '#1a1a3e'; ctx.fillRect(hudBarX, hudY, hudBarW, 5);
-    const xpPct = gs.expPercent / 100;
-    const xpGrad = ctx.createLinearGradient(hudBarX, hudY, hudBarX + hudBarW * xpPct, hudY);
-    xpGrad.addColorStop(0, '#4a9eff'); xpGrad.addColorStop(1, '#88eeff');
-    ctx.fillStyle = xpGrad;
-    ctx.fillRect(hudBarX, hudY, hudBarW * xpPct, 5);
-    ctx.strokeStyle = '#3a3a6a'; ctx.strokeRect(hudBarX, hudY, hudBarW, 5);
-    ctx.font = '8px "Press Start 2P", monospace';
-    ctx.textAlign = 'right'; ctx.fillStyle = '#88eeff';
-    ctx.fillText(`Lv.${gs.level}`, hudBarX - 4, hudY + 5);
-    ctx.textAlign = 'left'; ctx.fillStyle = '#ffdd57';
-    ctx.fillText(`🪙${GameEngine.formatNumber(gs.gold)}`, hudBarX + hudBarW + 4, hudY + 5);
   }
 
-  // ========== 动画控制接口 ==========
-  function setMouseAttackAnim(v) { mouseAttackAnim = v; }
-  function setMonsterHitAnim(v) { monsterHitAnim = v; }
-  function setMonsterDeathAnim(v) { monsterDeathAnim = v; }
-  function setMonsterWalkIn(v) { monsterWalkIn = v; }
-  function setBeastAttackAnim(v) { beastAttackAnim = v; }
+  // ========== 对外事件接口 ==========
+  function monsterTopWorld() {
+    const gs = lastState;
+    const m = gs && gs.currentMonster;
+    const x = m && m._screenX ? m._screenX : monsterPos().x;
+    const top = m && m._top ? m._top : groundY - 20;
+    return { x, y: top };
+  }
+  function mouseTopWorld() { const mp = mousePos(); const gs = lastState; const lift = gs && gs.visualEquip && gs.visualEquip.mount ? 20 : 0; return { x: mp.x, y: groundY - 26 - lift + (gs ? mouseFloat(gs.realmIndex) : 0) }; }
 
-  // ========== 导出 ==========
+  const FX = {
+    attack(d) {
+      mouseAtk = 10; monsterHit = 9;
+      const t = monsterTopWorld();
+      addEffect({ type: 'slash', big: d.isCrit, color: d.isCrit ? '#FFE27A' : '#FFFFFF' });
+      if (d.isCrit) { shake = Math.max(shake, 4); addText(t.x, t.y - 4, GameEngine.formatNumber(d.damage) + '!', '#FFD24A', { size: 17, crit: true }); }
+      else addText(t.x, t.y - 2, GameEngine.formatNumber(d.damage), '#FFFFFF', { size: 12 });
+      if (d.thunder) addText(t.x, t.y - 16, '天雷!', '#9FD0FF', { pixel: false, size: 12 });
+      addParticlesWorld(t.x - 4, groundY - 10, d.isCrit ? '#FFE27A' : '#FFFFFF', d.isCrit ? 10 : 4, 1.4);
+    },
+    skillCast(d) {
+      const mp = mouseTopWorld(), t = monsterTopWorld();
+      if (d.id === 'sword_qi') {
+        mouseAtk = 12;
+        addEffect({ type: 'swordqi' });
+        setTimeout(() => { monsterHit = 12; addText(t.x, t.y - 6, GameEngine.formatNumber(d.damage) + (d.isCrit ? '!' : ''), '#9FE8FF', { size: d.isCrit ? 18 : 15, crit: true }); }, 230);
+        addText(mp.x, mp.y - 6, '剑气斩', '#BFF4FF', { pixel: false, size: 13, float: true, jitter: false, life: 45 });
+      } else if (d.id === 'myriad_swords') {
+        mouseAtk = 12;
+        addEffect({ type: 'myriad' });
+        flash = 0.25; flashColor = '#C9A2FF';
+        setTimeout(() => { monsterHit = 14; shake = 7; addText(t.x, t.y - 8, GameEngine.formatNumber(d.damage) + '!', '#E0C8FF', { size: 20, crit: true }); }, 420);
+        addText(mp.x, mp.y - 6, '万剑归宗', '#E0C8FF', { pixel: false, size: 15, float: true, jitter: false, life: 60 });
+      } else if (d.id === 'heal_spring') {
+        addEffect({ type: 'heal' });
+        addEffect({ type: 'ring', x: mousePos().x, y: groundY - 2, color: '#7CF29A' });
+        addText(mp.x, mp.y, '+' + GameEngine.formatNumber(d.heal), '#7CF29A', { size: 13 });
+      } else if (d.id === 'golden_shield') {
+        addEffect({ type: 'ring', x: mousePos().x, y: groundY - 8, color: '#FFD86A' });
+        addText(mp.x, mp.y - 6, '金光罩', '#FFD86A', { pixel: false, size: 13, float: true, jitter: false, life: 45 });
+      }
+    },
+    beastAttack(d) {
+      beastAtk = 18;
+      const t = monsterTopWorld();
+      setTimeout(() => {
+        monsterHit = Math.max(monsterHit, 6);
+        const col = { fire_cat: '#FF8A4A', ice_wolf: '#9FD8FF', thunder_eagle: '#FFE27A', shadow_serpent: '#C9A2FF', jade_dragon: '#7CF2C8', phoenix: '#FF6A5A' }[d.templateId] || '#FF88FF';
+        addParticlesWorld(t.x - 6, groundY - 8, col, 6, 1.5);
+        addText(t.x + 10, t.y + 4, GameEngine.formatNumber(d.damage), col, { size: 11 });
+      }, 180);
+    },
+    monsterAttack(d) {
+      monsterLunge = 12;
+      setTimeout(() => {
+        mouseHit = 8;
+        const mp = mouseTopWorld();
+        addText(mp.x, mp.y + 4, '-' + GameEngine.formatNumber(d.damage), d.isCrit ? '#FF4A6A' : '#FF8A8A', { size: d.isCrit ? 15 : 11, crit: d.isCrit });
+        addParticlesWorld(mousePos().x, groundY - 10, '#FF6A7A', 3, 1);
+        if (d.isCrit) shake = Math.max(shake, 5);
+      }, 160);
+    },
+    shieldAbsorb(d) { const mp = mouseTopWorld(); addText(mp.x + 12, mp.y + 8, '护盾', '#FFD86A', { pixel: false, size: 10 }); },
+    dodge() { const mp = mouseTopWorld(); addText(mp.x, mp.y, '闪避', '#9FE8FF', { pixel: false, size: 12 }); },
+    monsterDodge() { const t = monsterTopWorld(); addText(t.x, t.y, 'MISS', '#AAAAAA', { size: 11 }); },
+    dotDamage(d) { const mp = mouseTopWorld(); addText(mp.x + 14, mp.y + 10, '-' + GameEngine.formatNumber(d.damage), d.type === 'poison' ? '#8BE06A' : '#FF9A4A', { size: 10 }); },
+    traitTrigger(d) { const t = monsterTopWorld(); addText(t.x, t.y - 20, d.msg, '#F0A6FF', { pixel: false, size: 12, jitter: false }); },
+    hpBarBreak(d) { const t = monsterTopWorld(); shake = 5; addParticlesWorld(t.x, groundY - 12, '#FFD86A', 14, 2); addText(t.x, t.y - 22, `破防！剩${d.barsLeft}管`, '#FFD86A', { pixel: false, size: 13, jitter: false }); },
+    kill(d) {
+      const gs = lastState;
+      const m = d.monster;
+      monsterWalkIn = 0;
+      if (performance.now() - lastStep > 400) return;
+      const x = m._screenX || monsterPos().x;
+      const px = PixelArt.samplePixels(m.name, 160).map(p => ({ x: x + p.x, y: groundY + p.y, color: p.color, vx: (Math.random() - 0.3) * 1.4, vy: -Math.random() * 1.6 }));
+      dying = { t: 0, px };
+      spawnCoins(x, groundY - 10, Math.min(8, 2 + (m.isElite ? 6 : 0)));
+      const t = { x, y: groundY - 30 };
+      addText(t.x, t.y - 10, '+' + GameEngine.formatNumber(d.goldGain), '#FFD86A', { size: 10, jitter: false, float: true, life: 50 });
+      if (m.isElite) { addText(t.x, t.y - 26, '精英击杀！', '#FFD86A', { pixel: false, size: 15, jitter: false }); flash = 0.3; flashColor = '#FFE8A0'; }
+      monsterWalkIn = 0;
+      const ks = gs ? gs.consecutiveKills : 0;
+      if ([10, 25, 50, 100, 200].includes(ks)) addText(W / 2, H * 0.3, `${ks} 连斩！`, '#FF9A4A', { pixel: false, size: 22, jitter: false, float: true, life: 70 });
+    },
+    spawn() { /* 走入动画在击杀时重置 */ },
+    levelup(d) { levelBeam = 50; const mp = mouseTopWorld(); addText(mp.x, mp.y - 12, 'LEVEL UP', '#9FF0FF', { size: 14, jitter: false, float: true, life: 70 }); addParticlesWorld(mousePos().x, groundY - 10, '#9FF0FF', 16, 1.8); },
+    death() { shake = 8; flash = 0.35; flashColor = '#FF3A4A'; addParticlesWorld(mousePos().x, groundY - 10, '#FF6A7A', 24, 2.2); },
+    revive() { addEffect({ type: 'ring', x: mousePos().x, y: groundY - 6, color: '#7CF29A' }); addParticlesWorld(mousePos().x, groundY - 10, '#7CF29A', 20, 1.8); },
+    autoHeal() { const mp = mouseTopWorld(); addText(mp.x, mp.y - 10, '回元丹', '#7CF29A', { pixel: false, size: 12, jitter: false }); addEffect({ type: 'heal' }); },
+    equipDrop(d) { const t = monsterTopWorld(); if (d.equip.qualityIdx >= 2) addText(t.x, t.y - 34, '装备!', d.equip.qualityColor, { pixel: false, size: 14, jitter: false, float: true }); },
+    tokenDrop(d) { const t = monsterTopWorld(); addText(t.x + 16, t.y - 40, `+${d.amount} 天机令`, '#FF9A4A', { pixel: false, size: 12, jitter: false, float: true }); },
+    encounter() { flash = 0.2; flashColor = '#FFE8A0'; addParticlesWorld(mousePos().x, groundY - 16, '#FFD86A', 20, 2); },
+    beastCapture() { flash = 0.25; flashColor = '#FFB0E8'; addParticlesWorld(mousePos().x - 20, groundY - 10, '#FFB0E8', 30, 2.4); },
+    achievement() { addParticlesWorld(mousePos().x, groundY - 20, '#FFD86A', 20, 2.2); },
+    tribulationFail() { },
+    breakthrough() { },
+    ascension() { flash = 1; flashColor = '#FFFFFF'; levelBeam = 120; addParticlesWorld(mousePos().x, groundY - 10, '#FFD86A', 80, 4); },
+    pillUse(d) { const mp = mouseTopWorld(); addText(mp.x, mp.y - 10, d.recipe.name, '#FFB0E8', { pixel: false, size: 12, jitter: false, float: true }); addEffect({ type: 'ring', x: mousePos().x, y: groundY - 6, color: '#FFB0E8' }); },
+  };
+
+  // 画面没有在绘制（标签页在后台）时不堆积特效
+  function handleEvent(type, data) {
+    if (!FX[type]) return;
+    if (performance.now() - lastStep > 400 && !['kill', 'spawn'].includes(type)) return;
+    FX[type](data || {});
+  }
+
+  function isTribulating() { return !!trib; }
+
   return {
-    init, render, resizeCanvas,
-    getPixelScale, getAnimFrame, getCanvas, getCtx,
-    // 粒子 & 特效
-    addDamageText, addCombatText, addParticles,
-    addDeathExplosion, addBreakthroughEffect,
-    addSkillEffect, addBeastProjectile,
-    // 动画控制
-    setMouseAttackAnim, setMonsterHitAnim,
-    setMonsterDeathAnim, setMonsterWalkIn,
-    setBeastAttackAnim,
+    init, render, step, resize, handleEvent, playTribulation, isTribulating,
+    getCanvas: () => canvas,
+    addParticlesWorld,
   };
 })();

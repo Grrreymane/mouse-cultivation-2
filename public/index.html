@@ -2,504 +2,117 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>🐭 鼠鼠修仙 v2.1</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>鼠鼠修仙 v3</title>
+  <meta name="description" content="一只鼠鼠的像素修仙之路 · 挂机放置小游戏">
   <link rel="icon" type="image/png" href="favicon.png">
   <link rel="shortcut icon" href="favicon.ico">
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: #0a0a1a; color: #e0e0e0;
-      font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
-      min-height: 100vh; overflow-x: hidden;
-    }
-    .header {
-      background: linear-gradient(180deg, #12102a 0%, #0a0820 100%);
-      border-bottom: 3px solid #4466aa; padding: 6px 16px;
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .header h1 { font-family: 'Press Start 2P', monospace; font-size: 12px; color: #66ccff; text-shadow: 2px 2px 0 #224488, 0 0 8px rgba(68,204,255,0.3); }
-    .header-right { display: flex; align-items: center; gap: 8px; }
-    .realm-badge { padding: 2px 8px; font-size: 11px; font-weight: bold; border: 2px solid; }
-    .speed-btn {
-      background: #2a2a5a; border: 1px solid #4a4a8a; color: #aaa;
-      padding: 2px 8px; font-size: 10px; cursor: pointer; min-width: 34px; text-align: center;
-    }
-    .speed-btn.active { color: #ffdd57; border-color: #ffdd57; background: #3a3a5a; }
-    .speed-btn:hover { color: #fff; }
-    .btn-reset { background: none; border: 1px solid #555; color: #666; padding: 2px 6px; font-size: 10px; cursor: pointer; }
-    .btn-reset:hover { color: #ff6b6b; border-color: #ff6b6b; }
-    .main-container { display: grid; grid-template-columns: 280px 1fr 260px; gap: 0; height: calc(100vh - 38px); }
-    .left-panel { background: #111128; border-right: 3px solid #2a2a5a; display: flex; flex-direction: column; overflow: hidden; }
-    .tab-bar { display: flex; border-bottom: 2px solid #2a2a5a; background: #0d0d25; flex-shrink: 0; flex-wrap: wrap; }
-    .tab-btn {
-      flex: 1; min-width: 34px; padding: 5px 1px; font-size: 12px; text-align: center;
-      cursor: pointer; color: #666; background: none; border: none;
-      border-bottom: 2px solid transparent; transition: all 0.15s;
-    }
-    .tab-btn:hover { color: #aaa; background: #1a1a3e; }
-    .tab-btn.active { color: #ffdd57; border-bottom-color: #ffdd57; background: #1a1a3e; }
-    .tab-content { flex: 1; overflow-y: auto; padding: 8px 10px; }
-    .tab-page { display: none; }
-    .tab-page.active { display: block; }
-    .stat-group { margin-bottom: 10px; }
-    .stat-group-title { font-size: 10px; color: #888; letter-spacing: 2px; margin-bottom: 4px; padding-bottom: 2px; border-bottom: 1px solid #2a2a5a; }
-    .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 1px 0; font-size: 11px; }
-    .stat-label { color: #999; }
-    .stat-value { color: #fff; font-weight: bold; }
-    .stat-value.gold { color: #ffdd57; }
-    .stat-value.attack { color: #ff6b6b; }
-    .stat-value.defense { color: #4ecdc4; }
-    .stat-value.hp-val { color: #95e86e; }
-    .exp-bar-bg { background: #1a1a3e; border: 2px solid #3a3a6a; height: 12px; position: relative; margin: 3px 0; }
-    .exp-bar-fill { height: 100%; background: linear-gradient(90deg, #4a9eff, #8ef); transition: width 0.5s ease; }
-    .exp-bar-text { position: absolute; top: 0; left: 50%; transform: translateX(-50%); font-size: 8px; line-height: 8px; color: #fff; text-shadow: 1px 1px 0 #000; font-family: 'Press Start 2P', monospace; }
-    .upgrade-btns { display: flex; flex-wrap: wrap; gap: 3px; }
-    .upgrade-btn, .action-btn {
-      background: #2a2a5a; border: 2px solid #4a4a8a; color: #aaa;
-      padding: 3px 6px; font-size: 10px; cursor: pointer; transition: all 0.15s; text-align: center;
-    }
-    .upgrade-btn:hover, .action-btn:hover { background: #3a3a7a; color: #fff; border-color: #6a6aba; }
-    .upgrade-btn.has-points { background: #2a4a2a; border-color: #4a8a4a; color: #95e86e; animation: pulse 1.5s infinite; }
-    .action-btn { flex: 1; min-width: 50px; }
-    .action-btn.gold { border-color: #8a8a2a; color: #ffdd57; }
-    .action-btn.gold:hover { background: #3a3a2a; }
-    .action-btn.red { border-color: #8a2a2a; color: #ff6b6b; }
-    .action-btn.danger { border-color: #ff4444; color: #ff4444; }
-    .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(149,232,110,0.3); } 50% { box-shadow: 0 0 8px 2px rgba(149,232,110,0.3); } }
-    .equip-slot-panel {
-      background: #1a1a3e; border: 1px solid #2a2a5a; padding: 4px 6px; margin: 2px 0; font-size: 10px;
-      display: flex; align-items: center; gap: 5px; cursor: pointer; transition: border-color 0.15s;
-    }
-    .equip-slot-panel:hover { border-color: #4a4a8a; }
-    .equip-slot-panel .slot-label { color: #666; min-width: 28px; }
-    .equip-slot-panel .equip-name { flex: 1; }
-    .equip-slot-panel .enhance { color: #88ff88; font-size: 9px; }
-    .inv-item {
-      background: #1a1a3e; border: 1px solid #2a2a5a; padding: 3px 5px; margin: 2px 0; font-size: 10px;
-      display: flex; align-items: center; gap: 3px;
-    }
-    .inv-item .inv-name { flex: 1; }
-    .inv-item .inv-score { color: #888; font-size: 9px; margin-right: 3px; }
-    .inv-item .inv-diff { font-size: 9px; margin-right: 3px; }
-    .inv-item .inv-diff.up { color: #88ff88; }
-    .inv-item .inv-diff.down { color: #ff8888; }
-    .inv-item button { background: #2a2a5a; border: 1px solid #3a3a6a; color: #aaa; padding: 1px 5px; font-size: 9px; cursor: pointer; }
-    .inv-item button:hover { color: #fff; background: #3a3a7a; }
-    .card { background: #1a1a3e; border: 1px solid #2a2a5a; padding: 5px 7px; margin: 3px 0; font-size: 10px; }
-    .card-title { font-weight: bold; color: #ddd; margin-bottom: 2px; }
-    .card-desc { color: #888; font-size: 9px; margin-bottom: 3px; }
-    .card-info { color: #aaa; font-size: 9px; }
-    .card-actions { display: flex; gap: 3px; margin-top: 3px; }
-    .mat-row { display: inline-flex; align-items: center; gap: 3px; margin-right: 8px; font-size: 11px; }
-    .mat-icon { font-size: 13px; }
-    .mat-val { color: #88eeff; font-weight: bold; }
-    .realm-card {
-      background: #1a1a3e; border: 2px solid #2a2a5a; padding: 6px; margin: 3px 0;
-      cursor: pointer; transition: all 0.15s;
-    }
-    .realm-card:hover { border-color: #4a4a8a; background: #222244; }
-    .realm-card.locked { opacity: 0.4; cursor: not-allowed; }
-    .realm-card .rc-name { font-weight: bold; font-size: 12px; color: #ffdd57; }
-    .realm-card .rc-desc { color: #888; font-size: 9px; margin-top: 1px; }
-    .trib-banner {
-      display: none; background: linear-gradient(90deg, #330033, #440044, #330033);
-      border: 2px solid #ff44ff; padding: 6px 10px; margin-bottom: 6px; text-align: center;
-      animation: tribPulse 2s infinite;
-    }
-    .trib-banner.active { display: block; }
-    .trib-banner .trib-title { color: #ff88ff; font-weight: bold; font-size: 12px; }
-    .trib-banner .trib-info { color: #cc88cc; font-size: 10px; margin: 3px 0; }
-    @keyframes tribPulse { 0%,100% { box-shadow: 0 0 5px #ff44ff; } 50% { box-shadow: 0 0 15px #ff44ff; } }
-    /* 死亡横幅 */
-    .death-banner {
-      display: none; background: linear-gradient(90deg, #330000, #440000, #330000);
-      border: 2px solid #ff4444; padding: 8px 12px; margin-bottom: 6px; text-align: center;
-      animation: deathPulse 1.5s infinite;
-    }
-    .death-banner.active { display: block; }
-    .death-banner .death-title { color: #ff8888; font-weight: bold; font-size: 13px; }
-    .death-banner .death-info { color: #cc8888; font-size: 11px; margin-top: 3px; }
-    @keyframes deathPulse { 0%,100% { box-shadow: 0 0 5px #ff4444; } 50% { box-shadow: 0 0 12px #ff4444; } }
-    /* 连杀计数 */
-    .streak-indicator {
-      display: none; position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
-      font-family: 'Press Start 2P', monospace; font-size: 10px; color: #ffdd57;
-      text-shadow: 1px 1px 2px #000, 0 0 6px rgba(255,221,87,0.4); z-index: 10; pointer-events: none;
-      transition: all 0.3s ease;
-    }
-    .streak-indicator.active { display: block; }
-    .streak-indicator.hot { color: #FF8844; font-size: 12px; text-shadow: 1px 1px 2px #000, 0 0 10px rgba(255,136,68,0.6); }
-    .streak-indicator.fire { color: #FF4444; font-size: 14px; text-shadow: 1px 1px 2px #000, 0 0 15px rgba(255,68,68,0.8); animation: streakPulse 0.5s infinite; }
-    @keyframes streakPulse { 0%,100% { transform: translateX(-50%) scale(1); } 50% { transform: translateX(-50%) scale(1.1); } }
-    /* DPS指示器 */
-    .dps-indicator {
-      position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
-      font-size: 10px; color: #aaa; z-index: 10; pointer-events: none;
-      font-family: 'Press Start 2P', monospace;
-    }
-    .buff-bar { display: flex; gap: 3px; flex-wrap: wrap; margin: 3px 0; }
-    .buff-tag { background: #2a4a2a; border: 1px solid #4a8a4a; color: #95e86e; padding: 1px 5px; font-size: 9px; border-radius: 2px; }
-    .buff-tag.atk { background: #4a2a2a; border-color: #8a4a4a; color: #ff8888; }
-    .buff-tag.crit { background: #4a4a2a; border-color: #8a8a4a; color: #ffff88; }
-    .buff-tag.auto-heal { background: #2a3a2a; border-color: #4a6a4a; color: #88cc88; }
-    .buff-tag.dot { background: #3a2a3a; border-color: #6a4a6a; color: #cc88cc; }
-    .battle-area { position: relative; background: #0d0d2b; overflow: hidden; }
-    #battleCanvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: -moz-crisp-edges; }
-    .right-panel {
-      background: #111128; border-left: 3px solid #2a2a5a;
-      padding: 8px; display: flex; flex-direction: column;
-    }
-    .log-title { font-size: 10px; color: #888; letter-spacing: 2px; margin-bottom: 4px; padding-bottom: 2px; border-bottom: 1px solid #2a2a5a; }
-    .battle-log { flex: 1; overflow-y: auto; font-size: 10px; line-height: 1.5; }
-    .battle-log p { padding: 1px 0; border-bottom: 1px solid #1a1a2e; color: #aaa; }
-    .stats-summary { margin-top: 6px; padding-top: 4px; border-top: 1px solid #2a2a5a; font-size: 10px; color: #666; line-height: 1.6; }
-    .overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:99; }
-    .popup {
-      display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
-      background:#1a1a3e; border:3px solid #ffdd57; padding:16px 24px;
-      z-index:100; text-align:center; min-width:280px; max-width:400px;
-    }
-    .popup h2 { color:#ffdd57; font-family:'Press Start 2P',monospace; font-size:11px; margin-bottom:8px; }
-    .popup .gains { font-size:12px; line-height:1.8; color:#ccc; }
-    .popup .gains span { color:#ffdd57; font-weight:bold; }
-    .popup button { margin-top:8px; padding:5px 16px; background:#ffdd57; color:#1a1a3e; border:none; font-weight:bold; cursor:pointer; font-size:12px; }
-    .popup button:hover { background: #ffee88; }
-    .breakthrough-flash { position:fixed; inset:0; background:white; z-index:200; pointer-events:none; opacity:0; transition:opacity 0.1s; }
-    .breakthrough-flash.active { opacity:0.6; }
-    /* 成就卡片 */
-    .ach-card { background: #1a1a3e; border: 1px solid #2a2a5a; padding: 4px 6px; margin: 2px 0; font-size: 10px; display: flex; align-items: center; gap: 6px; }
-    .ach-card.unlocked { border-color: #ffdd57; background: #2a2a3e; }
-    .ach-card .ach-icon { font-size: 16px; }
-    .ach-card .ach-info { flex: 1; }
-    .ach-card .ach-name { font-weight: bold; }
-    .ach-card .ach-desc { color: #888; font-size: 9px; }
-    .ach-card .ach-reward { color: #88ff88; font-size: 9px; }
-    .ach-card.locked { opacity: 0.5; }
-    /* 图鉴 */
-    .bestiary-card { background: #1a1a3e; border: 1px solid #2a2a5a; padding: 4px 6px; margin: 2px 0; font-size: 10px; display: flex; align-items: center; gap: 6px; }
-    .bestiary-card.discovered { border-color: #4a8a4a; }
-    .bestiary-card.undiscovered { opacity: 0.35; }
-    .bestiary-card .bc-sprite { flex-shrink: 0; width: 48px; height: 48px; background: #0a0a1e; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-    .bestiary-card .bc-sprite canvas { display: block; }
-    .bestiary-card .bc-kills { color: #ff6b6b; font-size: 9px; min-width: 45px; text-align: right; }
-    .bestiary-card .bc-trait { font-size: 9px; color: #cc88cc; }
-    /* 转生 */
-    .asc-card { background: #1a1a2e; border: 1px solid #3a3a6a; padding: 5px 7px; margin: 3px 0; font-size: 10px; display: flex; align-items: center; gap: 6px; }
-    .asc-card .asc-icon { font-size: 18px; }
-    .asc-card .asc-info { flex: 1; }
-    .asc-card .asc-name { font-weight: bold; color: #FFD700; }
-    .asc-card .asc-desc { color: #888; font-size: 9px; }
-    .asc-card .asc-level { color: #88eeff; font-size: 9px; }
-    /* 洞府 */
-    .cave-card {
-      background: #1a1a3e; border: 1px solid #2a2a5a; padding: 6px 8px; margin: 3px 0;
-      display: flex; align-items: center; gap: 8px; font-size: 10px;
-    }
-    .cave-card .cave-icon { font-size: 20px; }
-    .cave-card .cave-info { flex: 1; }
-    .cave-card .cave-name { font-weight: bold; color: #ddd; }
-    .cave-card .cave-desc { color: #888; font-size: 9px; }
-    .cave-card .cave-level { color: #88eeff; font-size: 9px; }
-    .cave-card .cave-effect { color: #88ff88; font-size: 9px; }
-    /* 抽卡结果 */
-    .gacha-result-card {
-      background: #1a1a3e; border: 2px solid #2a2a5a; padding: 5px 7px; margin: 2px 0;
-      font-size: 10px; display: flex; align-items: center; gap: 6px;
-      transition: all 0.3s; position: relative; overflow: hidden;
-    }
-    .gacha-result-card.new { animation: gachaNew 0.5s ease-out; }
-    .gacha-result-card .gacha-quality { font-size: 9px; padding: 1px 4px; border-radius: 2px; color: #fff; min-width: 28px; text-align: center; }
-    .gacha-result-card .gacha-name { flex: 1; font-weight: bold; }
-    .gacha-result-card .gacha-desc { color: #888; font-size: 9px; }
-    .gacha-result-card .gacha-tag { font-size: 8px; color: #888; }
-    .gacha-result-card.duplicate { opacity: 0.6; }
-    @keyframes gachaNew { 0% { transform: translateX(-20px); opacity: 0; } 100% { transform: translateX(0); opacity: 1; } }
-    /* 外观卡片 */
-    .skin-card {
-      background: #1a1a3e; border: 1px solid #2a2a5a; padding: 4px 6px; margin: 2px 0;
-      font-size: 10px; display: flex; align-items: center; gap: 6px;
-    }
-    .skin-card.equipped { border-color: #FFD700; background: #2a2a3e; }
-    .skin-card.locked { opacity: 0.3; }
-    .skin-card .skin-preview { flex-shrink: 0; width: 40px; height: 40px; background: #0a0a1e; border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-    .skin-card .skin-preview canvas { display: block; }
-    .skin-card .skin-quality { font-size: 9px; padding: 1px 4px; border-radius: 2px; color: #fff; min-width: 28px; text-align: center; }
-    .skin-card .skin-info { flex: 1; min-width: 0; }
-    .skin-card .skin-name { font-weight: bold; }
-    .skin-card .skin-desc { color: #888; font-size: 9px; }
-    .gacha-result-card .gr-preview { flex-shrink: 0; width: 36px; height: 36px; background: #0a0a1e; border-radius: 3px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-    .gacha-result-card .gr-preview canvas { display: block; }
-    ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-track { background: #0d0d2b; }
-    ::-webkit-scrollbar-thumb { background: #3a3a6a; border-radius: 3px; }
-    @media (max-width: 900px) {
-      .main-container { grid-template-columns: 1fr; grid-template-rows: 200px auto auto; height: auto; min-height: calc(100vh - 38px); }
-      .battle-area { order: -1; min-height: 200px; height: 200px; border-bottom: 3px solid #2a2a5a; }
-      .left-panel { border-right: none; border-bottom: 3px solid #2a2a5a; max-height: 55vh; }
-      .right-panel { border-left: none; max-height: 240px; }
-    }
-  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="breakthrough-flash" id="breakthroughFlash"></div>
-<div class="header">
-  <h1>🐭 鼠鼠修仙 <a href="changelog.html" style="font-size:0.5em;color:#7c6aef;text-decoration:none;vertical-align:middle;opacity:0.7;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">📋 迭代记录</a></h1>
-  <div class="header-right">
-    <div style="display:flex;gap:2px;">
-      <button class="speed-btn active" data-speed="1" onclick="Actions.setSpeed(1)">1x</button>
-      <button class="speed-btn" data-speed="2" onclick="Actions.setSpeed(2)">2x</button>
-      <button class="speed-btn" data-speed="4" onclick="Actions.setSpeed(4)">4x</button>
+<div class="flash-layer" id="flashLayer"></div>
+
+<header class="topbar">
+  <div class="brand">
+    <canvas id="brandIcon" width="22" height="26"></canvas>
+    <span class="brand-name">鼠鼠修仙</span>
+    <span class="brand-ver">v3.0</span>
+  </div>
+  <div class="resources">
+    <div class="res gold" title="灵石"><i class="coin"></i><b id="resGold">0</b></div>
+    <div class="res token" title="天机令">🎫<b id="resToken">0</b></div>
+    <div class="res mat" title="灵药">🌿<b id="resHerb">0</b></div>
+    <div class="res mat" title="矿石">⛏️<b id="resOre">0</b></div>
+    <div class="res mat" title="精华">💎<b id="resEssence">0</b></div>
+  </div>
+  <div class="top-actions">
+    <div class="speed" id="speedGroup">
+      <button data-action="speed" data-v="1" class="active">1×</button>
+      <button data-action="speed" data-v="2">2×</button>
+      <button data-action="speed" data-v="4">4×</button>
     </div>
-    <div id="realmBadge" class="realm-badge">炼气期</div>
-    <button class="btn-reset" onclick="Actions.resetGame()">重置</button>
+    <button class="icon-btn" id="soundBtn" data-action="sound" title="音效">🔊</button>
+    <button class="icon-btn" data-action="menu" title="菜单">☰</button>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="stage">
+    <div class="battle" id="battleArea">
+      <canvas id="battleCanvas"></canvas>
+
+      <div class="hud-player" id="hudPlayer">
+        <div class="hud-row">
+          <span class="realm-chip" id="hudRealm">炼气期</span>
+          <span class="hud-level" id="hudLevel">Lv.1</span>
+          <span class="hud-power" title="战力">战力 <b id="hudPower">0</b></span>
+        </div>
+        <div class="bar exp" title="修为"><i id="hudExpFill"></i><span id="hudExpText">0%</span></div>
+        <div class="bar hp" title="生命"><i id="hudHpFill"></i><span id="hudHpText">100/100</span></div>
+        <div class="hud-buffs" id="hudBuffs"></div>
+      </div>
+
+      <div class="hud-quest" id="questCard"></div>
+      <div class="hud-streak" id="hudStreak"></div>
+      <div class="hud-scene" id="hudScene"></div>
+
+      <div class="trib-cta" id="tribCta">
+        <div class="trib-title">⛈️ 天劫将至</div>
+        <div class="trib-sub">修为圆满，渡劫方可突破 <b id="tribNext"></b></div>
+        <button class="btn btn-trib" data-action="tribulation" id="tribBtn">⚡ 渡 劫 <small id="tribChance">60%</small></button>
+        <div class="trib-tip" id="tribTip">服用金元丹、装备更好的法宝可提升成功率</div>
+      </div>
+
+      <div class="death-overlay" id="deathOverlay">
+        <div class="death-title">鼠鼠陨落了…</div>
+        <div class="death-sub"><b id="reviveCountdown">5</b> 秒后重生</div>
+        <div class="death-tip" id="deathTip"></div>
+      </div>
+
+      <div class="skillbar" id="skillBar"></div>
+      <div class="toasts" id="toasts"></div>
+    </div>
+
+    <div class="logbox" id="logbox">
+      <div class="log-head">
+        <span>📜 修行日志</span>
+        <span class="log-dps">DPS <b id="dpsValue">0</b></span>
+        <button class="link-btn" data-action="toggleLog" id="logToggle">收起</button>
+      </div>
+      <div class="log-list" id="battleLog"></div>
+    </div>
+  </section>
+
+  <aside class="side">
+    <nav class="tabs" id="tabs"></nav>
+    <div class="tab-body" id="tabBody"></div>
+  </aside>
+</main>
+
+<div class="modal-mask" id="modalMask">
+  <div class="modal" id="modal">
+    <div class="modal-title" id="modalTitle"></div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-actions" id="modalActions"></div>
   </div>
 </div>
-<div class="main-container">
-  <div class="left-panel">
-    <div class="tab-bar">
-      <button class="tab-btn active" data-tab="status" title="状态">📊</button>
-      <button class="tab-btn" data-tab="equip" title="装备">⚔️</button>
-      <button class="tab-btn" data-tab="pills" title="丹药">💊</button>
-      <button class="tab-btn" data-tab="skills" title="功法">📜</button>
-      <button class="tab-btn" data-tab="beasts" title="灵兽">🐾</button>
-      <button class="tab-btn" data-tab="realm" title="秘境/塔">🏔️</button>
-      <button class="tab-btn" data-tab="cave" title="洞府">🏠</button>
-      <button class="tab-btn" data-tab="achieve" title="成就">🏆</button>
-      <button class="tab-btn" data-tab="bestiary" title="图鉴">📖</button>
-      <button class="tab-btn" data-tab="ascension" title="转生">🌟</button>
-      <button class="tab-btn" data-tab="gacha" title="天机阁">🎰</button>
-    </div>
-    <div class="tab-content">
-      <!-- 状态页 -->
-      <div class="tab-page active" id="tab-status">
-        <div class="death-banner" id="deathBanner">
-          <div class="death-title">💀 鼠鼠阵亡</div>
-          <div class="death-info">复活倒计时: <span id="reviveCountdown">5</span>秒</div>
-        </div>
-        <div class="trib-banner" id="tribBanner">
-          <div class="trib-title">⛈️ 天劫将至</div>
-          <div class="trib-info">成功率：<span id="tribChance">60%</span></div>
-          <button class="action-btn danger" onclick="Actions.doTribulation()" style="margin-top:3px;display:inline-block;border-color:#ff44ff;color:#ff44ff">⚡ 渡劫！</button>
-        </div>
-        <div class="stat-group">
-          <div class="stat-group-title">🐭 境界</div>
-          <div class="stat-row"><span class="stat-label">等级</span><span class="stat-value" id="level">Lv.1</span></div>
-          <div class="stat-row"><span class="stat-label">境界</span><span class="stat-value" id="realm">炼气期</span></div>
-          <div class="exp-bar-bg"><div class="exp-bar-fill" id="expBar" style="width:0%"></div><span class="exp-bar-text" id="expText">0%</span></div>
-        </div>
-        <div class="stat-group">
-          <div class="stat-group-title">⚔️ 属性</div>
-          <div class="stat-row"><span class="stat-label">攻击</span><span class="stat-value attack" id="attack">5</span></div>
-          <div class="stat-row"><span class="stat-label">防御</span><span class="stat-value defense" id="defense">1</span></div>
-          <div class="stat-row"><span class="stat-label">生命</span><span class="stat-value hp-val" id="hp">100/100</span></div>
-          <div class="stat-row"><span class="stat-label">暴击率</span><span class="stat-value" id="critRate">5%</span></div>
-          <div class="stat-row"><span class="stat-label">暴击伤害</span><span class="stat-value" id="critDamage">150%</span></div>
-          <div class="stat-row"><span class="stat-label">吸血</span><span class="stat-value" id="lifesteal">0%</span></div>
-          <div class="stat-row"><span class="stat-label">闪避</span><span class="stat-value" id="dodge">0%</span></div>
-          <div class="stat-row"><span class="stat-label">DPS</span><span class="stat-value attack" id="dpsValue">0</span></div>
-        </div>
-        <div class="buff-bar" id="buffBar"></div>
-        <div class="stat-group" id="talentGroup" style="display:none;">
-          <div class="stat-group-title">🎭 前世天赋</div>
-          <div id="talentDisplay" style="padding:3px 0;"></div>
-        </div>
-        <div class="stat-group">
-          <div class="stat-group-title">💰 资源</div>
-          <div class="stat-row"><span class="stat-label">🪙 灵石</span><span class="stat-value gold" id="gold">0</span></div>
-          <div class="stat-row"><span class="stat-label">天机令</span><span class="stat-value" id="tianjiDisplay" style="color:#FF8800;">0 🎫</span></div>
-          <div style="margin-top:3px;">
-            <span class="mat-row"><span class="mat-icon">🌿</span><span class="mat-val" id="matHerb">0</span></span>
-            <span class="mat-row"><span class="mat-icon">⛏️</span><span class="mat-val" id="matOre">0</span></span>
-            <span class="mat-row"><span class="mat-icon">💎</span><span class="mat-val" id="matEssence">0</span></span>
-          </div>
-        </div>
-        <div class="stat-group">
-          <div class="stat-group-title">🩹 自动吃药</div>
-          <div style="display:flex;align-items:center;gap:6px;font-size:11px;">
-            <button class="action-btn" id="autoHealBtn" onclick="Actions.toggleAutoHeal()" style="flex:0;padding:2px 8px;">OFF</button>
-            <span style="color:#888;">血量低于</span>
-            <select id="autoHealThreshold" onchange="Actions.setAutoHealThreshold()" style="background:#2a2a5a;border:1px solid #4a4a8a;color:#aaa;padding:1px 3px;font-size:10px;">
-              <option value="20">20%</option>
-              <option value="30" selected>30%</option>
-              <option value="40">40%</option>
-              <option value="50">50%</option>
-              <option value="60">60%</option>
-            </select>
-            <span style="color:#888;">自动吃回元丹</span>
-          </div>
-        </div>
-      </div>
-      <!-- 装备页 -->
-      <div class="tab-page" id="tab-equip">
-        <div class="stat-group"><div class="stat-group-title">🎒 已装备
-          <button class="action-btn gold" style="float:right;padding:1px 5px;font-size:8px;margin-left:3px;" onclick="Actions.doAutoEquipBest()">⚡一键换装</button>
-        </div><div id="equippedSlots"></div></div>
-        <div class="stat-group">
-          <div class="stat-group-title">📦 背包 (<span id="invCount">0</span>/<span id="invMax">30</span>)
-            <button class="action-btn" style="float:right;padding:1px 5px;font-size:8px;border-color:#FF8800;color:#FF8800;" onclick="Actions.doSellWeaker()">🗑️卖弱装</button>
-          </div>
-          <div id="inventoryList"></div>
-        </div>
-      </div>
-      <!-- 丹药页 -->
-      <div class="tab-page" id="tab-pills">
-        <div class="stat-group"><div class="stat-group-title">🧪 炼制</div><div id="pillRecipes"></div></div>
-        <div class="stat-group"><div class="stat-group-title">💊 背包</div><div id="pillInventory"></div></div>
-      </div>
-      <!-- 功法页 -->
-      <div class="tab-page" id="tab-skills">
-        <div class="stat-group"><div class="stat-group-title">📜 功法修炼（消耗修炼点）</div><div id="skillTree"></div></div>
-      </div>
-      <!-- 灵兽页 -->
-      <div class="tab-page" id="tab-beasts">
-        <div class="stat-group">
-          <div class="stat-group-title">🐾 灵兽</div>
-          <div id="beastList"></div>
-          <div id="noBeast" style="color:#555;font-size:10px;padding:6px;">尚未捕获灵兽，继续战斗吧...</div>
-        </div>
-      </div>
-      <!-- 秘境/塔页 -->
-      <div class="tab-page" id="tab-realm">
-        <div class="stat-group">
-          <div class="stat-group-title">🏔️ 秘境探索 (<span id="realmCharges">3</span>/<span id="realmMaxCharges">3</span>) <span style="color:#888;font-size:8px;">5层Roguelike</span></div>
-          <div id="secretRealmList"></div>
-          <div id="realmExploreLog" style="display:none;margin-top:4px;"></div>
-        </div>
-        <div class="stat-group">
-          <div class="stat-group-title">🗼 锁妖塔</div>
-          <div class="stat-row"><span class="stat-label">当前层</span><span class="stat-value" id="towerFloor">1</span></div>
-          <div class="stat-row"><span class="stat-label">最高</span><span class="stat-value gold" id="towerBest">0</span></div>
-          <div class="stat-row"><span class="stat-label">下个里程碑</span><span class="stat-value" id="nextMilestone" style="color:#FF8800;">10层</span></div>
-          <div class="upgrade-btns" style="margin-top:4px;display:flex;gap:3px;flex-wrap:wrap;">
-            <button class="action-btn gold" onclick="Actions.doTowerChallenge()">⚔️ 挑战1层</button>
-            <button class="action-btn" style="border-color:#FF8800;color:#FF8800;" onclick="Actions.doAutoTower()">🔥 连续闯</button>
-            <button class="action-btn" onclick="Actions.doSweepTower()">🧹 扫荡</button>
-          </div>
-          <div id="towerMilestoneList" style="margin-top:4px;"></div>
-        </div>
-      </div>
-      <!-- 洞府页 -->
-      <div class="tab-page" id="tab-cave">
-        <div class="stat-group">
-          <div class="stat-group-title">🏠 洞府建设（消耗灵石）</div>
-          <div id="caveList"></div>
-        </div>
-      </div>
-      <!-- 成就页 -->
-      <div class="tab-page" id="tab-achieve">
-        <div class="stat-group">
-          <div class="stat-group-title">🏆 成就（永久加成）<span id="achCount" style="color:#ffdd57;"></span></div>
-          <div id="achieveList"></div>
-        </div>
-      </div>
-      <!-- 图鉴页 -->
-      <div class="tab-page" id="tab-bestiary">
-        <div class="stat-group">
-          <div class="stat-group-title">📖 怪物图鉴 <span id="bestiaryCount" style="color:#ffdd57;"></span></div>
-          <div id="bestiaryList"></div>
-        </div>
-      </div>
-      <!-- 转生页 -->
-      <div class="tab-page" id="tab-ascension">
-        <div class="stat-group">
-          <div class="stat-group-title">🌟 飞升转生</div>
-          <div id="ascensionInfo" class="card" style="border-color:#FFD700;">
-            <div class="card-title" style="color:#FFD700;">✨ 仙缘</div>
-            <div class="card-info">转生次数: <span id="ascCount">0</span> | 仙缘点: <span id="ascPoints" style="color:#FFD700;">0</span></div>
-            <div class="card-desc" id="ascPreview" style="margin-top:4px;"></div>
-            <div class="card-actions" style="margin-top:6px;">
-              <button class="action-btn danger" id="ascendBtn" onclick="Actions.doAscension()" disabled>🌟 飞升（需Lv.50+）</button>
-            </div>
-          </div>
-        </div>
-        <div class="stat-group">
-          <div class="stat-group-title">🌟 仙缘升级（消耗仙缘点）</div>
-          <div id="ascUpgradeList"></div>
-        </div>
-        <div class="stat-group">
-          <div class="stat-group-title">🎭 前世天赋图鉴 (<span id="talentOwnedCount">0</span>/12)</div>
-          <div id="talentHistory"></div>
-        </div>
-      </div>
-      <!-- 天机阁抽卡页 -->
-      <div class="tab-page" id="tab-gacha">
-        <div class="stat-group">
-          <div class="stat-group-title">🎰 天机阁</div>
-          <div class="card" style="border-color:#FF8800;background:linear-gradient(135deg,#1a1a3e,#2a1a2e);">
-            <div class="card-title" style="color:#FFD700;font-size:13px;">🎫 天机令: <span id="gachaTokens" style="color:#FF8800;">0</span></div>
-            <div class="card-desc" style="color:#888;">外观抽取·武器&衣服（纯视觉，不影响战力）</div>
-            <div class="card-info" style="margin-top:4px;">
-              <span style="color:#CCCCCC;">凡30%</span> <span style="color:#44CC44;">良35%</span> <span style="color:#4488FF;">稀20%</span> <span style="color:#AA55FF;">珍10%</span> <span style="color:#FF8800;">极4%</span> <span style="color:#FF2222;">传1%</span>
-            </div>
-            <div class="card-desc" style="color:#ffdd57;margin-top:4px;">🔟 十连保底：至少获得一个珍品(紫)以上！</div>
-            <div class="card-desc" style="color:#888;margin-top:2px;">重复外观自动转换为天机令</div>
-            <div class="card-actions" style="margin-top:6px;gap:6px;">
-              <button class="action-btn gold" onclick="Actions.doGachaSingle()" style="flex:1;font-size:11px;padding:6px;">🎲 单抽 (10令)</button>
-              <button class="action-btn" onclick="Actions.doGachaTen()" style="flex:2;font-size:11px;padding:6px;border-color:#FF8800;color:#FF8800;background:linear-gradient(135deg,#2a1a1a,#3a2a1a);">🎰 十连抽！(90令)</button>
-            </div>
-          </div>
-        </div>
-        <div id="gachaResultArea" style="display:none;margin:6px 0;">
-          <div class="stat-group-title">✨ 抽卡结果</div>
-          <div id="gachaResults"></div>
-        </div>
-        <div class="stat-group">
-          <div class="stat-group-title">👗 当前外观</div>
-          <div id="equippedSkins"></div>
-        </div>
-        <div class="stat-group">
-          <div class="stat-group-title">📦 外观收藏 (<span id="skinCount">0</span>/<span id="skinTotal">40</span>)</div>
-          <div id="skinTabs" style="display:flex;gap:3px;margin-bottom:4px;">
-            <button class="action-btn" onclick="UI.filterSkins('all')" style="flex:1;font-size:9px;" id="skinFilterAll">全部</button>
-            <button class="action-btn" onclick="UI.filterSkins('weapon')" style="flex:1;font-size:9px;" id="skinFilterWeapon">⚔️武器</button>
-            <button class="action-btn" onclick="UI.filterSkins('armor')" style="flex:1;font-size:9px;" id="skinFilterArmor">👘衣服</button>
-          </div>
-          <div id="skinCollection"></div>
-        </div>
-        <div class="stat-group">
-          <div class="stat-group-title">📊 统计</div>
-          <div class="card"><div class="card-info">总抽卡次数: <span id="totalPulls">0</span></div></div>
-        </div>
-      </div>
-    </div>
+
+<div class="menu-mask" id="menuMask" data-action="closeMenu">
+  <div class="menu" id="menu">
+    <div class="menu-title">☰ 菜单</div>
+    <button class="menu-item" data-action="changelog">📋 迭代记录</button>
+    <button class="menu-item" data-action="help">❓ 玩法说明</button>
+    <button class="menu-item" data-action="exportSave">💾 导出存档</button>
+    <button class="menu-item" data-action="importSave">📥 导入存档</button>
+    <button class="menu-item danger" data-action="reset">🗑️ 重置游戏</button>
   </div>
-  <!-- 中央战斗区 -->
-  <div class="battle-area">
-    <div class="streak-indicator" id="streakIndicator">🔥 连杀 x0</div>
-    <div class="dps-indicator" id="dpsIndicator">DPS: 0</div>
-    <canvas id="battleCanvas"></canvas>
-  </div>
-  <!-- 右侧日志 -->
-  <div class="right-panel">
-    <div class="log-title">📜 战斗日志</div>
-    <div class="battle-log" id="battleLog"><p>🐭 鼠鼠踏上修仙之路...</p></div>
-    <div class="stats-summary">
-      <div>击杀: <span id="killCount">0</span> | 死亡: <span id="deathCount">0</span></div>
-      <div>精英: <span id="eliteKillCount">0</span> | 连杀: <span id="consecutiveKills">0</span></div>
-      <div>转生: <span id="ascensionCountDisplay" style="color:#FFD700;">0</span> | 仙缘: <span id="ascPointsDisplay" style="color:#FFD700;">0</span></div>
-      <div>总经验: <span id="totalExp">0</span></div>
-      <div>总灵石: <span id="totalGold">0</span></div>
-    </div>
-  </div>
-</div>
-<!-- 弹窗 -->
-<div class="overlay" id="overlay"></div>
-<div class="popup" id="offlinePopup">
-  <h2>⏰ 离线修炼</h2>
-  <div class="gains" id="offlineGains"></div>
-  <button onclick="UI.closePopup()">收下！</button>
-</div>
-<div class="popup" id="resultPopup" style="border-color:#88eeff">
-  <h2 id="resultTitle">结果</h2>
-  <div class="gains" id="resultMsg"></div>
-  <button onclick="UI.closePopup()">确定</button>
 </div>
 
 <script src="sprites.js"></script>
-<script src="sprite-loader.js"></script>
+<script src="pixelart.js"></script>
+<script src="sound.js"></script>
 <script src="engine.js"></script>
 <script src="renderer.js"></script>
 <script src="ui.js"></script>
