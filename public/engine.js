@@ -110,7 +110,7 @@ const GameEngine = (() => {
   }
 
   function getExpToNextLevel(level) { return Math.floor(50 * Math.pow(1.35, level - 1)); }
-  function killsPerLevel(level) { return 5 + 1.2 * level + 0.13 * level * level; }
+  function killsPerLevel(level) { return (5 + 1.2 * level + 0.13 * level * level) * 1.2; }
   function baseExpPerKill(level) { return getExpToNextLevel(level) / killsPerLevel(level); }
   function goldPerKill(level) { return 3 * Math.pow(1.2, clampLevel(level) - 1); }
 
@@ -217,18 +217,18 @@ const GameEngine = (() => {
 
   // ========== 丹药系统 ==========
   const PILL_RECIPES = [
-    { id: 'exp_pill', name: '黄龙丹', desc: '修炼速度×2，持续60秒', icon: '💊',
-      materials: { herb: 5 }, goldK: 6, effect: { type: 'expBoost', mult: 2, duration: 60 }, minRealm: 0 },
+    { id: 'exp_pill', name: '黄龙丹', desc: '修炼速度×1.5，持续30回合', icon: '💊',
+      materials: { herb: 5 }, goldK: 6, effect: { type: 'expBoost', mult: 1.5, duration: 60 }, minRealm: 0 },
     { id: 'heal_pill', name: '回元丹', desc: '立即回满生命（可自动服用）', icon: '💚',
       materials: { herb: 4 }, goldK: 2, effect: { type: 'heal', value: 1.0 }, minRealm: 0 },
-    { id: 'atk_pill', name: '筑元丹', desc: '攻击×1.5，持续60秒', icon: '🔴',
+    { id: 'atk_pill', name: '筑元丹', desc: '攻击×1.5，持续30回合', icon: '🔴',
       materials: { herb: 2, ore: 2 }, goldK: 6, effect: { type: 'atkBoost', mult: 1.5, duration: 60 }, minRealm: 0 },
     { id: 'trib_pill', name: '金元丹', desc: '渡劫成功率+25%，持续120秒', icon: '⚡',
       materials: { herb: 5, ore: 4, essence: 1 }, goldK: 15, effect: { type: 'tribBoost', value: 0.25, duration: 120 }, minRealm: 0 },
-    { id: 'crit_pill', name: '清心丹', desc: '暴击率+25%，持续60秒', icon: '💥',
+    { id: 'crit_pill', name: '清心丹', desc: '暴击率+25%，持续30回合', icon: '💥',
       materials: { herb: 3, essence: 1 }, goldK: 8, effect: { type: 'critBoost', value: 0.25, duration: 60 }, minRealm: 1 },
-    { id: 'super_exp', name: '天灵地宝丹', desc: '修炼速度×4，持续60秒', icon: '🌟',
-      materials: { herb: 10, essence: 3 }, goldK: 30, effect: { type: 'expBoost', mult: 4, duration: 60 }, minRealm: 2 },
+    { id: 'super_exp', name: '天灵地宝丹', desc: '修炼速度×2.5，持续30回合', icon: '🌟',
+      materials: { herb: 8, essence: 2 }, goldK: 30, effect: { type: 'expBoost', mult: 2.5, duration: 60 }, minRealm: 2 },
   ];
 
   // ========== 功法系统 ==========
@@ -523,6 +523,63 @@ const GameEngine = (() => {
     { id: 'hp_up', name: '气血充盈', desc: '生命+30%', effect: { hpMult: 1.3 } },
   ];
 
+  // ========== 天降机缘（画面上可点击的漂浮宝物）==========
+  const FORTUNES = [
+    { id: 'gold', name: '灵石袋', icon: '💰', weight: 34 },
+    { id: 'herb', name: '灵芝仙草', icon: '🌿', weight: 24 },
+    { id: 'insight', name: '悟道灵光', icon: '✨', weight: 22 },
+    { id: 'token', name: '天机签', icon: '🎫', weight: 14 },
+    { id: 'star', name: '福星高照', icon: '🌟', weight: 6 },
+  ];
+  const FORTUNE_LIFE = 14000;
+
+  function rollFortune() {
+    const tw = FORTUNES.reduce((a, f) => a + f.weight, 0);
+    let r = Math.random() * tw;
+    for (const f of FORTUNES) { r -= f.weight; if (r <= 0) return f; }
+    return FORTUNES[0];
+  }
+
+  function updateFortune(now) {
+    if (state.fortune && now > state.fortune.until) {
+      state.fortune = null;
+      state.nextFortuneAt = now + randInt(90, 200) * 1000;
+    }
+    if (!state.fortune && !state.isDead && now >= (state.nextFortuneAt || 0)) {
+      const f = rollFortune();
+      state.fortune = { kind: f.id, spawnedAt: now, until: now + FORTUNE_LIFE, seed: Math.random() };
+      emit('fortuneSpawn', { fortune: state.fortune });
+    }
+  }
+
+  function claimFortune() {
+    const f = state.fortune;
+    if (!f || Date.now() > f.until) return { success: false };
+    const def = FORTUNES.find(x => x.id === f.kind) || FORTUNES[0];
+    const L = state.level;
+    let text = '';
+    if (f.kind === 'gold') { const g = Math.floor(goldPerKill(L) * randInt(8, 14)); state.gold += g; state.totalGold += g; text = `灵石 +${formatNumber(g)}`; }
+    else if (f.kind === 'herb') {
+      const h = randInt(3, 6), o = randInt(2, 4), e = Math.random() < 0.4 ? 1 : 0;
+      state.materials.herb += h; state.materials.ore += o; state.materials.essence += e;
+      text = `灵药×${h} 矿石×${o}${e ? ' 精华×1' : ''}`;
+    } else if (f.kind === 'insight') {
+      const e = Math.floor(getExpToNextLevel(L) * rand(0.05, 0.09)); gainExp(e); checkLevelUp(); text = `修为 +${formatNumber(e)}`;
+    } else if (f.kind === 'token') { const t = randInt(2, 4); state.tianjiTokens += t; text = `天机令 +${t}`; }
+    else if (f.kind === 'star') {
+      const now = Date.now();
+      state.buffs.fortuneStar = { until: Math.max(now, (state.buffs.fortuneStar && state.buffs.fortuneStar.until) || 0) + 60000 };
+      text = '60秒内 修为与灵石×2';
+    }
+    state.fortune = null;
+    state.nextFortuneAt = Date.now() + randInt(90, 200) * 1000;
+    state.stats.fortunes = (state.stats.fortunes || 0) + 1;
+    addLog(`${def.icon} 天降机缘·${def.name}！${text}`);
+    emit('fortuneClaim', { kind: f.kind, name: def.name, icon: def.icon, text });
+    saveState();
+    return { success: true, name: def.name, text };
+  }
+
   // ========== 状态 ==========
   function getDefaultState() {
     return {
@@ -566,7 +623,11 @@ const GameEngine = (() => {
       autoCast: false,
       shield: null,
       questIndex: 0,
-      stats: { skillCasts: 0, pillsCrafted: 0, pillsUsed: 0, realmRuns: 0, maxHit: 0, playTime: 0 },
+      stats: { skillCasts: 0, pillsCrafted: 0, pillsUsed: 0, realmRuns: 0, maxHit: 0, playTime: 0, fortunes: 0 },
+      // v3.1
+      fortune: null, nextFortuneAt: Date.now() + 45000,
+      autoEquip: false, autoSellQuality: -1, autoPills: {},
+      pendingTalents: null,
     };
   }
 
@@ -772,6 +833,7 @@ const GameEngine = (() => {
     if (state.buffs.atkBoost && now < state.buffs.atkBoost.until) attack *= state.buffs.atkBoost.mult;
     if (state.buffs.critBoost && now < state.buffs.critBoost.until) critRate += state.buffs.critBoost.value * 100;
     if (state.buffs.expBoost && now < state.buffs.expBoost.until) expBonus += (state.buffs.expBoost.mult - 1) * 100;
+    if (state.buffs.fortuneStar && now < state.buffs.fortuneStar.until) { expBonus += 100; goldBonus += 100; }
 
     // 前世天赋
     const talent = getCurrentTalent();
@@ -1094,6 +1156,8 @@ const GameEngine = (() => {
     refreshRealmCharges();
     processCaveProduction();
     checkAndRefreshDaily();
+    updateFortune(now);
+    autoUsePills();
 
     if (!state.currentMonster || (state.currentMonster.hp <= 0 && state.currentMonster.currentBar <= 1)) spawnNext();
 
@@ -1184,7 +1248,8 @@ const GameEngine = (() => {
     state.shield = null;
     const talent = getCurrentTalent();
     const isPhoenix = talent && talent.effect.quickRevive;
-    const goldLoss = (talent && talent.effect.noDeathPenalty) ? 0 : Math.floor(state.gold * 0.05);
+    // 损失5%灵石，但最多相当于20只同级妖兽的灵石，挂机卡关时不至于越挂越穷
+    const goldLoss = (talent && talent.effect.noDeathPenalty) ? 0 : Math.floor(Math.min(state.gold * 0.05, goldPerKill(state.level) * 20));
     state.gold = Math.max(0, state.gold - goldLoss);
     const reviveDelay = isPhoenix ? 1000 : Math.min(12000, 4000 + (state.deathCount - 1) * 300);
     state.reviveTime = Date.now() + reviveDelay;
@@ -1204,6 +1269,45 @@ const GameEngine = (() => {
     return false;
   }
 
+  // 新装备：自动换装 / 自动出售 / 放入背包
+  function handleNewEquip(equip, announce) {
+    const delta = getEquipPowerDelta(equip);
+    if (state.autoEquip && delta > 0) {
+      const old = state.equipment[equip.slot];
+      state.equipment[equip.slot] = equip;
+      if (old) handleNewEquip(old, false);
+      state.hp = Math.min(state.hp, getComputedStats().maxHp);
+      addLog(`⚡ 自动换上 <span style="color:${equip.qualityColor}">[${equip.name}·${EQUIP_QUALITIES[equip.qualityIdx].label}]</span>`);
+      emit('equipDrop', { equip, auto: 'equip' });
+      emit('equipChange', {});
+      return 'equipped';
+    }
+    if (state.autoSellQuality >= 0 && equip.qualityIdx <= state.autoSellQuality && delta <= 0) {
+      state.gold += getEquipSellPrice(equip);
+      return 'sold';
+    }
+    if (addToInventory(equip)) {
+      if (announce) {
+        addLog(`📦 获得装备 <span style="color:${equip.qualityColor}">[${equip.name}·${EQUIP_QUALITIES[equip.qualityIdx].label}]</span>`);
+        emit('equipDrop', { equip });
+      }
+      return 'kept';
+    }
+    return 'sold';
+  }
+
+  function setAutoEquip(on) { state.autoEquip = !!on; saveState(); if (on) autoEquipBest(); return state.autoEquip; }
+  function setAutoSellQuality(q) {
+    state.autoSellQuality = Math.max(-1, Math.min(3, q));
+    if (state.autoSellQuality >= 0) {
+      for (let i = state.inventory.length - 1; i >= 0; i--) {
+        const it = state.inventory[i];
+        if (it.qualityIdx <= state.autoSellQuality && getEquipPowerDelta(it) <= 0) { state.gold += getEquipSellPrice(it); state.inventory.splice(i, 1); }
+      }
+    }
+    saveState();
+  }
+
   function processDrops(monster) {
     if (Math.random() < 0.28) {
       const r = Math.random();
@@ -1218,10 +1322,7 @@ const GameEngine = (() => {
     if (Math.random() < dropRate) {
       const q = monster.isElite ? rollQuality(1) : rollQuality(0);
       const equip = generateEquipment(state.level, q);
-      if (addToInventory(equip)) {
-        addLog(`📦 获得装备 <span style="color:${equip.qualityColor}">[${equip.name}·${EQUIP_QUALITIES[q].label}]</span>`);
-        emit('equipDrop', { equip });
-      }
+      handleNewEquip(equip, true);
     }
   }
 
@@ -1742,6 +1843,7 @@ const GameEngine = (() => {
       questIndex: state.questIndex, stats: { ...state.stats },
       battleSpeed: state.battleSpeed, autoHealEnabled: state.autoHealEnabled, autoHealThreshold: state.autoHealThreshold,
       autoCast: state.autoCast,
+      autoEquip: state.autoEquip, autoSellQuality: state.autoSellQuality, autoPills: { ...(state.autoPills || {}) },
     };
     const fresh = getDefaultState();
     const startLevel = 1 + (state.ascensionBonuses.startLevel || 0) * 2;
@@ -1757,20 +1859,32 @@ const GameEngine = (() => {
     state.lastTickTime = Date.now();
     state.lastCaveProduction = Date.now();
 
-    const available = PAST_LIFE_TALENTS.filter(t => !state.pastLifeTalents.includes(t.id));
-    const pool = available.length ? available : PAST_LIFE_TALENTS;
-    const talent = pool[Math.floor(Math.random() * pool.length)];
-    state.currentTalent = talent.id;
-    if (!state.pastLifeTalents.includes(talent.id)) state.pastLifeTalents.push(talent.id);
+    // 前世天赋：三选一（优先给未觉醒过的）
+    const fresh3 = PAST_LIFE_TALENTS.filter(t => !state.pastLifeTalents.includes(t.id)).sort(() => Math.random() - 0.5);
+    const rest = PAST_LIFE_TALENTS.filter(t => !fresh3.includes(t)).sort(() => Math.random() - 0.5);
+    state.pendingTalents = [...fresh3, ...rest].slice(0, 3).map(t => t.id);
+    state.currentTalent = null;
     const ascTokens = 10 + state.ascensionCount * 5;
     state.tianjiTokens += ascTokens;
     addLog(`🌟 飞升转生！第${state.ascensionCount}世 · 获得${pointsGained}仙缘点 · ${ascTokens}天机令`);
-    addLog(`🎭 觉醒前世天赋【${talent.icon}${talent.name}】${talent.desc}`);
     spawnNext();
     checkAchievements();
-    emit('ascension', { pointsGained, ascensionCount: state.ascensionCount, talent });
+    emit('ascension', { pointsGained, ascensionCount: state.ascensionCount });
     saveState();
-    return { success: true, msg: `飞升成功！获得 ${pointsGained} 仙缘点<br>觉醒前世天赋【${talent.icon}${talent.name}】<br><span style="opacity:.75">${talent.desc}</span>`, pointsGained };
+    return { success: true, msg: `飞升成功！获得 ${pointsGained} 仙缘点 · ${ascTokens} 天机令`, pointsGained, pendingTalents: state.pendingTalents };
+  }
+
+  function chooseTalent(id) {
+    if (!state.pendingTalents || !state.pendingTalents.includes(id)) return { success: false, msg: '无法选择该天赋' };
+    const talent = PAST_LIFE_TALENTS.find(t => t.id === id);
+    state.currentTalent = id;
+    if (!state.pastLifeTalents.includes(id)) state.pastLifeTalents.push(id);
+    state.pendingTalents = null;
+    state.hp = getComputedStats().maxHp;
+    addLog(`🎭 觉醒前世天赋【${talent.icon}${talent.name}】${talent.desc}`);
+    emit('talentChosen', { talent });
+    saveState();
+    return { success: true, msg: `觉醒【${talent.icon}${talent.name}】`, talent };
   }
 
   function getAscensionUpgradeCost(u, lv) { return u.cost * (1 + Math.floor(lv / 3)); }
@@ -1919,7 +2033,28 @@ const GameEngine = (() => {
     return { success: true, msg: `炼成 ${recipe.name}×${made}`, made };
   }
 
-  function usePill(recipeId) {
+  const AUTO_PILL_BUFF = { exp_pill: 'expBoost', super_exp: 'expBoost', atk_pill: 'atkBoost', crit_pill: 'critBoost' };
+  const AUTO_PILL_LEVEL = 15;
+  function setAutoPill(id, on) {
+    if (!AUTO_PILL_BUFF[id]) return { success: false, msg: '该丹药不能自动服用' };
+    if (state.level < AUTO_PILL_LEVEL) return { success: false, msg: `Lv.${AUTO_PILL_LEVEL} 解锁自动服用` };
+    state.autoPills = state.autoPills || {};
+    state.autoPills[id] = !!on;
+    saveState();
+    return { success: true, on: !!on };
+  }
+  function autoUsePills() {
+    if (!state.autoPills || state.level < AUTO_PILL_LEVEL) return;
+    const now = Date.now();
+    for (const id of ['super_exp', 'exp_pill', 'atk_pill', 'crit_pill']) {
+      if (!state.autoPills[id] || !(state.pills[id] > 0)) continue;
+      const buff = state.buffs[AUTO_PILL_BUFF[id]];
+      if (buff && buff.until > now + 1000) continue;
+      usePill(id, true);
+    }
+  }
+
+  function usePill(recipeId, isAuto) {
     if ((state.pills[recipeId] || 0) <= 0) return { success: false, msg: '数量不足' };
     const recipe = PILL_RECIPES.find(r => r.id === recipeId);
     if (!recipe) return { success: false, msg: '配方不存在' };
@@ -1929,12 +2064,14 @@ const GameEngine = (() => {
     const now = Date.now();
     const talent = getCurrentTalent();
     const durMult = (talent && talent.effect.pillDurationMult) || 1;
-    const extend = (key, data, seconds) => {
+    // 战斗类增益按回合计：倍速越高持续的真实时间越短（渡劫丹除外）
+    const extend = (key, data, seconds, realTime) => {
       const existing = state.buffs[key] && state.buffs[key].until > now ? state.buffs[key].until : now;
-      state.buffs[key] = { ...data, until: existing + seconds * 1000 * durMult };
+      const speed = realTime ? 1 : (state.battleSpeed || 1);
+      state.buffs[key] = { ...data, until: existing + seconds * 1000 * durMult / speed };
     };
     if (eff.type === 'heal') { state.hp = getComputedStats().maxHp; addLog(`💚 服用${recipe.name}，生命回满`); }
-    else if (eff.type === 'tribBoost') { extend('tribBoost', { value: eff.value }, eff.duration); addLog(`⚡ 服用${recipe.name}，渡劫成功率+${eff.value * 100}%`); }
+    else if (eff.type === 'tribBoost') { extend('tribBoost', { value: eff.value }, eff.duration, true); addLog(`⚡ 服用${recipe.name}，渡劫成功率+${eff.value * 100}%`); }
     else if (eff.type === 'expBoost') {
       // 不同倍率的修炼丹不叠加倍率，取高者
       const cur = state.buffs.expBoost && state.buffs.expBoost.until > now ? state.buffs.expBoost : null;
@@ -1944,7 +2081,7 @@ const GameEngine = (() => {
     }
     else if (eff.type === 'atkBoost') { extend('atkBoost', { mult: eff.mult }, eff.duration); addLog(`🔴 服用${recipe.name}，攻击×${eff.mult}`); }
     else if (eff.type === 'critBoost') { extend('critBoost', { value: eff.value }, eff.duration); addLog(`💥 服用${recipe.name}，暴击+${eff.value * 100}%`); }
-    emit('pillUse', { recipe });
+    emit('pillUse', { recipe, auto: !!isAuto });
     saveState();
     return { success: true, msg: '服用成功' };
   }
@@ -2271,6 +2408,8 @@ const GameEngine = (() => {
       realmMaxCharges: getRealmMaxCharges(),
       realmChargeCountdown: getRealmChargeCountdown(),
       maxLevel: MAX_LEVEL,
+      autoPillUnlocked: state.level >= AUTO_PILL_LEVEL,
+      pendingTalentList: state.pendingTalents ? state.pendingTalents.map(id => PAST_LIFE_TALENTS.find(t => t.id === id)) : null,
     };
   }
 
@@ -2291,6 +2430,7 @@ const GameEngine = (() => {
     challengeTower, autoChallengeTower, sweepTower, getTowerMonster, TOWER_MILESTONES, describeMilestone,
     // 渡劫/设置
     attemptTribulation, setBattleSpeed, toggleAutoHeal, setAutoHealThreshold,
+    claimFortune, FORTUNES, FORTUNE_LIFE, setAutoEquip, setAutoSellQuality, setAutoPill, AUTO_PILL_LEVEL, chooseTalent,
     // 洞府/成就/任务
     upgradeCaveBuilding, maxUpgradeCave, getCaveBuildingCost, CAVE_BUILDINGS, CAVE_EFFECT_NAMES,
     ACHIEVEMENTS, describeReward, claimQuest, QUESTS,

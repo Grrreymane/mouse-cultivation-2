@@ -137,8 +137,8 @@
       <h1>🐭 鼠鼠修仙 · 迭代记录</h1>
       <p>每一个版本都是一次飞升 ✨</p>
       <div class="stats">
-        <div class="stat"><span class="stat-value">v3.0</span><span class="stat-label">当前版本</span></div>
-        <div class="stat"><span class="stat-value">32</span><span class="stat-label">版本迭代</span></div>
+        <div class="stat"><span class="stat-value">v3.1</span><span class="stat-label">当前版本</span></div>
+        <div class="stat"><span class="stat-value">33</span><span class="stat-label">版本迭代</span></div>
         <div class="stat"><span class="stat-value">~7000+</span><span class="stat-label">总代码行数</span></div>
         <div class="stat"><span class="stat-value">6天</span><span class="stat-label">开发周期</span></div>
       </div>
@@ -146,8 +146,45 @@
 
     <div class="timeline" id="timeline">
 
+      <!-- v3.1 -->
+      <div class="version-card minor open">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v3.1</span>
+          <span class="version-title">天降机缘 · 天赋三选一 · 挂机设置 · 数值微调</span>
+          <span class="version-date">2026-09-26</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">让"盯着看"有奖励、让"挂着不管"更省心，并用模拟器把新增收益重新校准。</div>
+          <div class="feature-group">
+            <div class="feature-group-title">✨ 新玩法 <span class="tag tag-new">新功能</span></div>
+            <ul class="feature-list">
+              <li><strong>天降机缘</strong>：每 1.5~3.3 分钟画面上飘过一件宝物（灵石袋/灵芝仙草/悟道灵光/天机签/福星高照），点击领取，14 秒后消失</li>
+              <li><strong>前世天赋三选一</strong>：飞升后从三个天赋中挑一个（优先出现未觉醒过的），可稍后在飞升页选择</li>
+              <li><strong>自动换装</strong>：掉落更强装备直接换上；<strong>自动出售</strong>：按品质自动卖掉不如身上的装备</li>
+              <li><strong>丹药自动服用</strong>（Lv.15）：黄龙丹/天灵地宝丹/筑元丹/清心丹药效结束时自动续上，让材料有了持续用途</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">📊 数值 <span class="tag tag-balance">平衡</span></div>
+            <ul class="feature-list">
+              <li>战斗类丹药持续时间按<strong>回合</strong>计（倍速越高真实时间越短），避免 4 倍速下丹药收益翻 4 倍</li>
+              <li>黄龙丹 修炼 ×2 → ×1.5；天灵地宝丹 ×4 → ×2.5（可自动续服后必须调低）</li>
+              <li>每级所需击杀 +20%；模拟结果：普通到大乘 ≈3.4 小时，丹药+机缘全用 ≈2.1 小时（1 倍速）</li>
+              <li>阵亡损失灵石封顶（最多 20 只同级妖兽的灵石），挂机卡关不再越挂越穷</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">🎨 表现 <span class="tag tag-visual">美术</span></div>
+            <ul class="feature-list">
+              <li>攻速带来的第二次出手错开 0.2 秒显示，连击更有节奏感</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
       <!-- v3.0 -->
-      <div class="version-card major open">
+      <div class="version-card major">
         <div class="version-header" onclick="toggleVersion(this)">
           <span class="version-badge major">v3.0</span>
           <span class="version-title">回归v1鼠鼠画风 · 像素生物重制 · 数值重做 · 界面重构</span>

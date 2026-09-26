@@ -497,6 +497,7 @@ const Renderer = (() => {
     drawCoins();
     drawEffects(gs);
     drawParticles();
+    drawFortune(gs);
     if (levelBeam > 0) drawLevelBeam(mp.x, mouseY);
     if (trib) drawTribulation(gs, mp.x, mouseY);
 
@@ -562,6 +563,62 @@ const Renderer = (() => {
     wctx.fillRect(x - 6, 0, 13, groundY);
     wctx.fillStyle = `rgba(255,255,255,${0.5 * a})`;
     wctx.fillRect(x - 2, 0, 5, groundY);
+  }
+
+  // ========== 天降机缘 ==========
+  function fortunePos(f) {
+    const life = GameEngine.FORTUNE_LIFE;
+    const t = Math.max(0, Math.min(1, (Date.now() - f.spawnedAt) / life));
+    const x = W + 12 - (W + 24) * t;
+    const baseY = Math.floor(H * 0.3 + f.seed * H * 0.18);
+    const y = baseY + Math.sin((Date.now() - f.spawnedAt) * 0.003 + f.seed * 6) * 6;
+    return { x: Math.round(x), y: Math.round(y), t };
+  }
+
+  const FORTUNE_ART = {
+    gold: (c, x, y) => { prect(c, x - 3, y - 1, 7, 6, '#8E5A2A'); prect(c, x - 2, y, 5, 4, '#B8783A'); prect(c, x - 1, y - 3, 3, 2, '#8E5A2A'); prect(c, x - 2, y - 4, 5, 1, '#FFD24A'); prect(c, x - 1, y + 1, 3, 2, '#FFD24A'); prect(c, x, y + 1, 1, 1, '#FFF6B0'); },
+    herb: (c, x, y) => { prect(c, x, y - 1, 1, 6, '#3F8030'); prect(c, x - 3, y - 3, 3, 2, '#6DB547'); prect(c, x + 1, y - 4, 3, 2, '#8BD150'); prect(c, x - 2, y + 1, 2, 1, '#6DB547'); prect(c, x - 1, y - 6, 3, 3, '#E0566E'); prect(c, x, y - 5, 1, 1, '#FFB0C0'); },
+    insight: (c, x, y) => { prect(c, x, y - 5, 1, 11, '#E6FBFF'); prect(c, x - 5, y, 11, 1, '#E6FBFF'); prect(c, x - 1, y - 1, 3, 3, '#FFFFFF'); prect(c, x - 2, y - 2, 1, 1, '#9FE8FF'); prect(c, x + 2, y + 2, 1, 1, '#9FE8FF'); prect(c, x + 2, y - 2, 1, 1, '#9FE8FF'); prect(c, x - 2, y + 2, 1, 1, '#9FE8FF'); },
+    token: (c, x, y) => { prect(c, x - 3, y - 4, 7, 9, '#C9641E'); prect(c, x - 2, y - 3, 5, 7, '#FF9A4A'); prect(c, x - 1, y - 2, 3, 1, '#FFE0B0'); prect(c, x - 1, y, 3, 1, '#FFE0B0'); prect(c, x, y - 6, 1, 2, '#FFD24A'); },
+    star: (c, x, y) => { prect(c, x, y - 5, 1, 11, '#FFD24A'); prect(c, x - 5, y - 1, 11, 2, '#FFD24A'); prect(c, x - 2, y - 3, 5, 6, '#FFD24A'); prect(c, x - 1, y - 2, 3, 3, '#FFF6B0'); prect(c, x - 4, y + 3, 2, 2, '#FFD24A'); prect(c, x + 3, y + 3, 2, 2, '#FFD24A'); },
+  };
+
+  function drawFortune(gs) {
+    const f = gs.fortune;
+    if (!f || Date.now() > f.until) return;
+    const p = fortunePos(f);
+    const remain = f.until - Date.now();
+    if (remain < 2500 && Math.floor(animFrame / 4) % 2) return; // 快消失时闪烁
+    // 光晕
+    const pulse = 9 + Math.round(Math.sin(animFrame * 0.12) * 1.5);
+    wctx.fillStyle = f.kind === 'star' ? 'rgba(255,220,100,0.28)' : 'rgba(255,245,200,0.22)';
+    for (let yy = -pulse; yy <= pulse; yy++) { const w = Math.floor(Math.sqrt(pulse * pulse - yy * yy)); wctx.fillRect(p.x - w, p.y + yy, w * 2 + 1, 1); }
+    // 拖尾星光
+    if (animFrame % 3 === 0) particles.push({ x: p.x + 4, y: p.y + (Math.random() - 0.5) * 6, vx: 0.3, vy: 0.05, life: 22, color: f.kind === 'star' ? '#FFD24A' : '#FFF6C8', g: 0 });
+    (FORTUNE_ART[f.kind] || FORTUNE_ART.gold)(wctx, p.x, p.y);
+    f._screen = toScreen(p.x, p.y);
+  }
+
+  function hitFortune(clientX, clientY) {
+    const gs = lastState;
+    const f = gs && gs.fortune;
+    if (!f || Date.now() > f.until) return false;
+    const r = canvas.getBoundingClientRect();
+    const wx = (clientX - r.left) / PX, wy = (clientY - r.top) / PX;
+    const p = fortunePos(f);
+    return Math.hypot(wx - p.x, wy - p.y) < 14;
+  }
+
+  function fortuneClaimFx(d) {
+    const f = lastState && lastState.fortune;
+    const p = f ? fortunePos(f) : { x: W / 2, y: H * 0.35 };
+    const col = { gold: '#FFD24A', herb: '#8BD150', insight: '#BFF4FF', token: '#FF9A4A', star: '#FFE27A' }[d.kind] || '#FFFFFF';
+    addParticlesWorld(p.x, p.y, col, 30, 2.2);
+    addParticlesWorld(p.x, p.y, '#FFFFFF', 10, 1.6);
+    addEffect({ type: 'ring', x: p.x, y: p.y, color: col });
+    addText(p.x, p.y - 8, d.name, col, { pixel: false, size: 15, jitter: false, float: true, life: 60 });
+    addText(p.x, p.y + 6, d.text, '#FFFFFF', { pixel: false, size: 12, jitter: false, float: true, life: 70 });
+    if (d.kind === 'star') { flash = 0.35; flashColor = '#FFE8A0'; }
   }
 
   // ========== 渡劫演出 ==========
@@ -749,6 +806,14 @@ const Renderer = (() => {
     const m = gs.currentMonster;
     if (m && !gs.isDead && m._screenX !== undefined && monsterWalkIn > 0.6) drawMonsterBar(m);
     if (!gs.isDead) drawPlayerBar(gs);
+    if (gs.fortune && gs.fortune._screen && Date.now() < gs.fortune.until) {
+      const sp = gs.fortune._screen;
+      ctx.font = 'bold 11px "PingFang SC","Microsoft YaHei",sans-serif'; ctx.textAlign = 'center';
+      ctx.globalAlpha = 0.6 + Math.sin(animFrame * 0.15) * 0.4;
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.strokeText('点我', sp.x, sp.y - 13 * PX / 2 - 6);
+      ctx.fillStyle = '#FFF2B0'; ctx.fillText('点我', sp.x, sp.y - 13 * PX / 2 - 6);
+      ctx.globalAlpha = 1;
+    }
     drawTexts();
   }
 
@@ -841,8 +906,15 @@ const Renderer = (() => {
   }
   function mouseTopWorld() { const mp = mousePos(); const gs = lastState; const lift = gs && gs.visualEquip && gs.visualEquip.mount ? 20 : 0; return { x: mp.x, y: groundY - 26 - lift + (gs ? mouseFloat(gs.realmIndex) : 0) }; }
 
+  let lastAttackFx = 0;
   const FX = {
     attack(d) {
+      const now = performance.now();
+      if (now - lastAttackFx < 180) { lastAttackFx = now + 220; setTimeout(() => FX._attack(d), 220); return; }
+      lastAttackFx = now;
+      FX._attack(d);
+    },
+    _attack(d) {
       mouseAtk = 10; monsterHit = 9;
       const t = monsterTopWorld();
       addEffect({ type: 'slash', big: d.isCrit, color: d.isCrit ? '#FFE27A' : '#FFFFFF' });
@@ -928,7 +1000,9 @@ const Renderer = (() => {
     tribulationFail() { },
     breakthrough() { },
     ascension() { flash = 1; flashColor = '#FFFFFF'; levelBeam = 120; addParticlesWorld(mousePos().x, groundY - 10, '#FFD86A', 80, 4); },
-    pillUse(d) { const mp = mouseTopWorld(); addText(mp.x, mp.y - 10, d.recipe.name, '#FFB0E8', { pixel: false, size: 12, jitter: false, float: true }); addEffect({ type: 'ring', x: mousePos().x, y: groundY - 6, color: '#FFB0E8' }); },
+    fortuneClaim(d) { fortuneClaimFx(d); },
+    pillUse(d) {
+      if (d.auto) return; const mp = mouseTopWorld(); addText(mp.x, mp.y - 10, d.recipe.name, '#FFB0E8', { pixel: false, size: 12, jitter: false, float: true }); addEffect({ type: 'ring', x: mousePos().x, y: groundY - 6, color: '#FFB0E8' }); },
   };
 
   // 画面没有在绘制（标签页在后台）时不堆积特效
@@ -941,7 +1015,7 @@ const Renderer = (() => {
   function isTribulating() { return !!trib; }
 
   return {
-    init, render, step, resize, handleEvent, playTribulation, isTribulating,
+    init, render, step, resize, handleEvent, hitFortune, playTribulation, isTribulating,
     getCanvas: () => canvas,
     addParticlesWorld,
   };

@@ -88,7 +88,7 @@ const UI = (() => {
     dots.realm = s.secretRealmCharges > 0 || (!s.towerDailyRewardClaimed && s.towerBestFloor > 0);
     dots.cave = GameEngine.CAVE_BUILDINGS.some(b => s.level >= b.minLevel && (s.cave[b.id] || 0) < b.maxLevel && s.gold >= GameEngine.getCaveBuildingCost(b.id));
     dots.gacha = s.tianjiTokens >= GameEngine.GACHA_COST_SINGLE;
-    dots.ascend = s.canAscend || GameEngine.ASCENSION_UPGRADES.some(u => (s.ascensionBonuses[u.id] || 0) < u.maxLevel && s.ascensionPoints >= GameEngine.getAscensionUpgradeCost(u, s.ascensionBonuses[u.id] || 0));
+    dots.ascend = !!s.pendingTalentList || s.canAscend || GameEngine.ASCENSION_UPGRADES.some(u => (s.ascensionBonuses[u.id] || 0) < u.maxLevel && s.ascensionPoints >= GameEngine.getAscensionUpgradeCost(u, s.ascensionBonuses[u.id] || 0));
     dots.pills = s.needTribulation && !(s.pills.trib_pill > 0);
     return dots;
   }
@@ -168,6 +168,7 @@ const UI = (() => {
     if (s.buffs.expBoost && s.buffs.expBoost.until > now) b.push(`<span class="buff good">修炼×${s.buffs.expBoost.mult} ${sec(s.buffs.expBoost.until)}s</span>`);
     if (s.buffs.atkBoost && s.buffs.atkBoost.until > now) b.push(`<span class="buff good">攻击×${s.buffs.atkBoost.mult} ${sec(s.buffs.atkBoost.until)}s</span>`);
     if (s.buffs.critBoost && s.buffs.critBoost.until > now) b.push(`<span class="buff good">暴击+${Math.round(s.buffs.critBoost.value * 100)}% ${sec(s.buffs.critBoost.until)}s</span>`);
+    if (s.buffs.fortuneStar && s.buffs.fortuneStar.until > now) b.push(`<span class="buff gold">🌟福星 修为灵石×2 ${sec(s.buffs.fortuneStar.until)}s</span>`);
     if (s.buffs.tribBoost && s.buffs.tribBoost.until > now) b.push(`<span class="buff gold">渡劫+${Math.round(s.buffs.tribBoost.value * 100)}% ${sec(s.buffs.tribBoost.until)}s</span>`);
     if (s.shield && s.shield.amount > 0) b.push(`<span class="buff gold">护盾 ${fmt(s.shield.amount)}</span>`);
     for (const d of s.playerDoTs || []) b.push(`<span class="buff bad">${d.type === 'poison' ? '中毒' : '灼烧'} ${d.ticksLeft}</span>`);
@@ -331,6 +332,7 @@ const UI = (() => {
           <div>陨落 <b>${s.deathCount}</b></div><div>最高连斩 <b>${s.consecutiveKills}</b></div>
           <div>最高一击 <b>${fmt(s.stats.maxHit || 0)}</b></div><div>神通施放 <b>${fmt(s.stats.skillCasts || 0)}</b></div>
           <div>累计灵石 <b>${fmt(s.totalGold)}</b></div><div>锁妖塔 <b>${s.towerBestFloor}层</b></div>
+          <div>天降机缘 <b>${s.stats.fortunes || 0}次</b></div>
           <div>飞升 <b>${s.ascensionCount}次</b></div><div>修行时长 <b>${Math.floor((s.stats.playTime || 0) / 60000)}分</b></div>
         </div>
       </div>`;
@@ -364,7 +366,17 @@ const UI = (() => {
           <button class="btn sm ${d > 0 ? 'jade' : ''}" data-action="equip" data-id="${it.id}">装备</button>
           <button class="btn sm ghost" data-action="sell" data-id="${it.id}" title="出售 ${fmt(GameEngine.getEquipSellPrice(it))} 灵石">卖</button>
         </div>`).join('');
+      const qOpts = [[-1, '关闭'], [0, '凡品'], [1, '良品及以下'], [2, '稀有及以下'], [3, '珍品及以下']];
+      const autoCard = `<div class="card row">
+          <button class="switch ${s.autoEquip ? 'on' : ''}" data-action="toggleAutoEquip"></button>
+          <div class="grow small">掉落更强的装备时<b>自动换上</b></div>
+        </div>
+        <div class="card row">
+          <span class="small grow">自动出售不如身上的
+            <select data-change="autoSell">${qOpts.map(([v, n]) => `<option value="${v}" ${s.autoSellQuality === v ? 'selected' : ''}>${n}</option>`).join('')}</select> 装备</span>
+        </div>`;
       return `
+      <div class="sec"><div class="sec-title">挂机设置</div>${autoCard}</div>
       <div class="sec"><div class="sec-title">已装备<span class="btns"><button class="btn sm gold" data-action="autoEquip">⚡一键换装</button></span></div>${slots}
         <div class="hint">强化每级 +8% 基础属性与固定词条，最高 +15</div></div>
       <div class="sec"><div class="sec-title">背包<span class="extra">${s.inventory.length}/${s.inventoryMax}</span><span class="btns"><button class="btn sm red" data-action="sellWeaker">出售弱装</button></span></div>
@@ -416,12 +428,18 @@ const UI = (() => {
         }).join(' ');
         const canCraft = !locked && s.gold >= cost.gold && Object.entries(cost.materials).every(([k, v]) => (s.materials[k] || 0) >= v);
         const own = s.pills[r.id] || 0;
+        const autoable = ['exp_pill', 'super_exp', 'atk_pill', 'crit_pill'].includes(r.id);
+        const autoOn = !!(s.autoPills && s.autoPills[r.id]);
+        const autoRow = autoable && !locked ? `<div class="row small" style="margin-top:6px;gap:6px">
+            <button class="switch ${autoOn ? 'on' : ''}" data-action="toggleAutoPill" data-id="${r.id}" ${s.autoPillUnlocked ? '' : 'disabled'}></button>
+            <span class="${s.autoPillUnlocked ? '' : 'muted'}">${s.autoPillUnlocked ? '药效结束时自动服用' : `Lv.${GameEngine.AUTO_PILL_LEVEL} 解锁自动服用`}</span></div>` : '';
         return `<div class="card ${locked ? 'dim' : ''}">
           <div class="row">
             <div class="skill-ico">${r.icon}</div>
             <div class="grow"><b>${r.name}</b> ${own ? `<span class="tag t-gold">持有 ${own}</span>` : ''}${locked ? ` <span class="tag">需${GameEngine.REALMS[r.minRealm].name}</span>` : ''}
               <div class="muted small">${r.desc}</div>
               <div style="margin-top:4px">${mats} <span class="tag" style="color:${s.gold >= cost.gold ? '#ffdf8a' : '#ff8a9a'}">🪙 ${fmt(cost.gold)}</span></div>
+              ${autoRow}
             </div>
             <div style="display:flex;flex-direction:column;gap:4px">
               <button class="btn sm ${canCraft ? 'gold' : ''}" data-action="craft" data-id="${r.id}" ${canCraft ? '' : 'disabled'}>炼制</button>
@@ -574,14 +592,16 @@ const UI = (() => {
       const talents = GameEngine.PAST_LIFE_TALENTS.map(t => {
         const has = owned.includes(t.id), cur = t.id === s.currentTalentId;
         return `<div class="card row ${has ? (cur ? 'hl' : '') : 'dim'}"><div class="skill-ico">${has ? t.icon : '?'}</div>
-          <div class="grow"><b>${has ? t.name : '???'}</b> ${cur ? '<span class="tag t-gold">当前</span>' : ''}<div class="muted small">${has ? t.desc : '飞升时随机觉醒'}</div>${has ? `<div class="small" style="color:#7a7090;font-style:italic">「${t.flavor}」</div>` : ''}</div></div>`;
+          <div class="grow"><b>${has ? t.name : '???'}</b> ${cur ? '<span class="tag t-gold">当前</span>' : ''}<div class="muted small">${has ? t.desc : '飞升时三选一觉醒'}</div>${has ? `<div class="small" style="color:#7a7090;font-style:italic">「${t.flavor}」</div>` : ''}</div></div>`;
       }).join('');
-      return `<div class="card hl" style="text-align:center;padding:14px">
+      const pending = s.pendingTalentList ? `<div class="card hl" style="border-color:var(--purple)"><div class="sec-title">🎭 选择本世的前世天赋</div>
+          ${talentChoiceHtml(s.pendingTalentList)}</div>` : '';
+      return pending + `<div class="card hl" style="text-align:center;padding:14px">
           <div class="muted">飞升 ${s.ascensionCount} 次 · 仙缘点</div>
           <div class="gacha-tokens" style="color:var(--gold-2)">✨ ${s.ascensionPoints}</div>
           <div class="muted small" style="margin:6px 0 10px">${s.canAscend ? `此时飞升可获得 <b class="t-gold">${s.ascensionPointsPreview}</b> 仙缘点（等级、塔层、灵兽数量越高越多）` : '突破大乘期（Lv.50）后可飞升转生'}</div>
           <button class="btn purple lg" data-action="ascend" ${s.canAscend ? '' : 'disabled'}>🌟 白日飞升</button>
-          <div class="muted small" style="margin-top:8px">重置：等级、装备、材料、功法、洞府<br>保留：灵兽(等级减半)、成就、图鉴、外观、天机令、10%灵石</div>
+          <div class="muted small" style="margin-top:8px">重置：等级、装备、材料、功法、洞府<br>保留：灵兽(等级减半)、成就、图鉴、外观、天机令、10%灵石<br><span class="t-purple">飞升后三选一觉醒前世天赋</span></div>
         </div>
         <div class="sec" style="margin-top:12px"><div class="sec-title">仙缘加持<span class="extra">永久生效</span></div>${ups}</div>
         <div class="sec"><div class="sec-title">前世天赋<span class="extra">${owned.length}/${GameEngine.PAST_LIFE_TALENTS.length}</span></div>${talents}</div>`;
@@ -611,6 +631,20 @@ const UI = (() => {
       return html;
     },
   };
+
+  function talentChoiceHtml(list) {
+    return `<div style="display:grid;gap:6px">${list.map(t => `
+      <button class="card row" data-action="chooseTalent" data-id="${t.id}" style="text-align:left;margin:0;cursor:pointer;border-color:#4a3470">
+        <div class="skill-ico" style="font-size:20px">${t.icon}</div>
+        <div class="grow"><b class="t-gold">${t.name}</b><div class="small">${t.desc}</div><div class="small" style="color:#7a7090;font-style:italic">「${t.flavor}」</div></div>
+      </button>`).join('')}</div>`;
+  }
+
+  function showTalentChoice() {
+    const s = GameEngine.getState();
+    if (!s.pendingTalentList) return;
+    modal({ title: '🎭 觉醒前世天赋 · 三选一', html: `<p class="muted small" style="margin-bottom:8px">飞升转世，前尘往事浮现心头……选择一段前世记忆，它将伴随你这一世的修行。</p>${talentChoiceHtml(s.pendingTalentList)}`, buttons: [{ text: '稍后再选' }] });
+  }
 
   // 渲染后绘制画布
   function drawMouseTo(canvas, s, extra) {
@@ -669,6 +703,6 @@ const UI = (() => {
 
   return {
     initTabs, update, renderTab, toast, modal, closeModal, modalButton, confirmBox,
-    setTab, setCodexSub, setSkinFilter, setLastPulls, getCurrentTab, flashSkill, toggleLog, drawMouseTo,
+    setTab, setCodexSub, setSkinFilter, setLastPulls, getCurrentTab, flashSkill, toggleLog, drawMouseTo, showTalentChoice,
   };
 })();

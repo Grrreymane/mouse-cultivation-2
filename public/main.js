@@ -79,6 +79,13 @@
     caveUp: el => { const r = GameEngine.upgradeCaveBuilding(el.dataset.id); if (r.success) Sound.play('levelup'); result(r); },
     caveMax: el => { const r = GameEngine.maxUpgradeCave(el.dataset.id); if (r.success) Sound.play('levelup'); result(r); },
     autoHeal: () => { GameEngine.toggleAutoHeal(); Sound.play('click'); refresh(); },
+    toggleAutoEquip: () => { const on = GameEngine.setAutoEquip(!GameEngine.getState().autoEquip); UI.toast(on ? '⚡ 自动换装：开启' : '自动换装：关闭', on ? 'green' : ''); Sound.play('click'); refresh(); },
+    toggleAutoPill: el => { const s = GameEngine.getState(); const r = GameEngine.setAutoPill(el.dataset.id, !(s.autoPills && s.autoPills[el.dataset.id])); if (!r.success) { UI.toast(r.msg, 'red'); Sound.play('error'); } else Sound.play('click'); refresh(); },
+    chooseTalent: el => {
+      const r = GameEngine.chooseTalent(el.dataset.id);
+      if (r.success) { UI.closeModal(); Sound.play('breakthrough'); UI.toast(`🎭 ${r.msg}：${r.talent.desc}`, 'gold'); }
+      refresh(); UI.renderTab(true);
+    },
 
     // 历练
     enterRealm: el => {
@@ -115,11 +122,12 @@
     // 飞升
     ascend: () => {
       const s = GameEngine.getState();
-      UI.confirmBox('🌟 白日飞升', `<p>飞升后将获得 <b class="t-gold">${s.ascensionPointsPreview}</b> 仙缘点，并随机觉醒一个前世天赋。</p>
+      UI.confirmBox('🌟 白日飞升', `<p>飞升后将获得 <b class="t-gold">${s.ascensionPointsPreview}</b> 仙缘点，并从三个前世天赋中选择一个觉醒。</p>
         <p class="muted" style="margin-top:6px">重置：等级、装备、材料、功法、洞府<br>保留：灵兽(等级减半)、成就、图鉴、外观、天机令、10%灵石</p>`, '飞升！', () => {
         const r = GameEngine.performAscension();
-        if (r.success) { Sound.play('breakthrough'); setTimeout(() => UI.modal({ title: '🌟 飞升成功', html: `<div style="text-align:center">${r.msg}</div>` }), 50); }
+        if (r.success) { Sound.play('breakthrough'); UI.toast('🌟 ' + r.msg, 'gold'); setTimeout(() => UI.showTalentChoice(), 50); }
         refresh(); UI.renderTab(true);
+        return false;
       }, 'purple');
     },
     ascUp: el => { const r = GameEngine.buyAscensionUpgrade(el.dataset.id); if (r.success) Sound.play('levelup'); result(r, null, 'gold'); },
@@ -188,6 +196,8 @@
       <p style="margin-top:6px">⚔️ <b>神通</b>：点击画面下方按钮施放，筑基期后可开启自动施放。</p>
       <p style="margin-top:6px">⛈️ <b>渡劫</b>：每个大境界修为圆满后需要渡劫。刚突破时实力大涨，越接近境界圆满妖兽越强——这就是<b>瓶颈</b>。卡住了就去强化装备、修炼功法、炼丹、培养灵兽。</p>
       <p style="margin-top:6px">📜 <b>修行指引</b>会一步步带你熟悉各个系统，完成后记得领取奖励。</p>
+      <p style="margin-top:6px">✨ <b>天降机缘</b>：画面上偶尔会飘过宝物，点一下就能拿到灵石、材料、修为或天机令。</p>
+      <p style="margin-top:6px">⚙️ <b>挂机设置</b>：装备页可开启自动换装/自动出售，丹药页（Lv.15）可设置药效结束时自动服用。</p>
       <p style="margin-top:6px">🏔️ <b>历练</b>：秘境每小时恢复一次，锁妖塔检验实力并给予里程碑奖励。</p>
       <p style="margin-top:6px">🌟 <b>飞升</b>：大乘期后可飞升转生，获得仙缘点永久加成与随机前世天赋，下一世更快更强。</p>
       <p class="muted small" style="margin-top:8px">快捷键：1-4 施放神通 · 空格 渡劫/领取指引</p>` });
@@ -204,6 +214,7 @@
   });
   document.addEventListener('change', e => {
     if (e.target.dataset.change === 'healThreshold') { GameEngine.setAutoHealThreshold(+e.target.value); refresh(); }
+    if (e.target.dataset.change === 'autoSell') { GameEngine.setAutoSellQuality(+e.target.value); UI.toast(+e.target.value >= 0 ? '已开启自动出售弱装备' : '已关闭自动出售'); refresh(); }
   });
   document.addEventListener('keydown', e => {
     if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
@@ -220,6 +231,13 @@
       if (s.needTribulation) ACTIONS.tribulation();
       else if (s.quest && s.quest.done) ACTIONS.claimQuest();
     }
+  });
+  const battleView = document.getElementById('battleView');
+  battleView.addEventListener('click', e => {
+    if (Renderer.hitFortune(e.clientX, e.clientY)) { GameEngine.claimFortune(); refresh(); }
+  });
+  battleView.addEventListener('mousemove', e => {
+    battleView.style.cursor = Renderer.hitFortune(e.clientX, e.clientY) ? 'pointer' : '';
   });
   document.getElementById('modalMask').addEventListener('click', e => { if (e.target.id === 'modalMask' && modalDismissable()) UI.closeModal(); });
   function modalDismissable() { return true; }
@@ -253,6 +271,13 @@
       case 'questReady': UI.toast(`📜 修行指引「${data.quest.title}」完成，领取奖励吧`, 'gold'); Sound.play('quest'); break;
       case 'tokenDrop': Sound.play('drop'); break;
       case 'hpBarBreak': Sound.play('crit'); break;
+      case 'fortuneSpawn': {
+        Sound.play('rare');
+        const n = (GameEngine.getState().stats.fortunes || 0);
+        if (n < 3) UI.toast('✨ 天降机缘！点击画面中飘过的宝物', 'gold');
+        break;
+      }
+      case 'fortuneClaim': Sound.play('quest'); UI.toast(`${data.icon} ${data.name}：${data.text}`, 'gold'); break;
     }
   }
 
@@ -295,6 +320,7 @@
     Renderer.render();
     setInterval(() => UI.update(false), 250);
     if (offline && offline.offlineSeconds >= 60) showOffline(offline);
+    else if (GameEngine.getState().pendingTalentList) setTimeout(() => UI.showTalentChoice(), 300);
     else if (GameEngine.getState().killCount === 0) setTimeout(showHelp, 400);
     window.addEventListener('resize', () => setTimeout(() => Renderer.resize(), 30));
   }
