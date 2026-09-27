@@ -18,7 +18,7 @@
   <div class="brand">
     <canvas id="brandIcon" width="22" height="26"></canvas>
     <span class="brand-name">鼠鼠修仙</span>
-    <span class="brand-ver">v3.3</span>
+    <span class="brand-ver">v3.4</span>
   </div>
   <div class="resources">
     <div class="res gold" title="灵石"><i class="coin"></i><b id="resGold">0</b></div>
@@ -59,9 +59,13 @@
       <div class="hud-scene" id="hudScene"></div>
 
       <div class="trib-cta" id="tribCta">
-        <div class="trib-title">⛈️ 天劫将至</div>
-        <div class="trib-sub">修为圆满，渡劫方可突破 <b id="tribNext"></b></div>
-        <button class="btn btn-trib" data-action="tribulation" id="tribBtn">⚡ 渡 劫 <small id="tribChance">60%</small></button>
+        <div class="trib-main">
+          <div class="trib-text">
+            <div class="trib-title">⛈️ 天劫将至</div>
+            <div class="trib-sub">渡劫突破 <b id="tribNext"></b></div>
+          </div>
+          <button class="btn btn-trib" data-action="tribulation" id="tribBtn">⚡ 渡劫 <small id="tribChance">60%</small></button>
+        </div>
         <div class="trib-tip" id="tribTip">服用金元丹、装备更好的法宝可提升成功率</div>
       </div>
 

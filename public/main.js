@@ -26,6 +26,7 @@
     menu: () => document.getElementById('menuMask').classList.add('on'),
     closeMenu: (el, e) => { if (e.target === el) el.classList.remove('on'); },
     toggleLog: () => UI.toggleLog(),
+    toggleQuest: () => UI.toggleQuest(),
     modalBtn: el => UI.modalButton(+el.dataset.i),
 
     cast: el => {
