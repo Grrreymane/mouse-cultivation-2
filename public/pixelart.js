@@ -221,81 +221,6 @@ const PixelArt = (() => {
   const def = (name, spec) => { DEFS[name] = spec; };
   const OL = '#1B1428';
 
-  // ===== 立式 S 形真龙（面朝左设计，mir=true 时镜像为面朝右）=====
-  // 头在左上，颈部向右后方拱起 → 身体在中段扫回左侧 → 底部向右盘卷 → 尾巴向右上甩起
-  // c: { mir, body, belly, fin, mane, horn, eye, mouth }
-  function sDragon(T, f, c) {
-    const WD = 80;
-    const X = x => c.mir ? WD - x : x;
-    const pt = ([x, y]) => [X(x), y];
-    const E = (x, y, rx, ry, m, o) => T.E(X(x), y, rx, ry, m, o);
-    const L = (x0, y0, x1, y1, m, w, t) => T.L(X(x0), y0, X(x1), y1, m, w, t);
-    const Tr = (x0, y0, x1, y1, x2, y2, m, t) => T.T(X(x0), y0, X(x1), y1, X(x2), y2, m, t);
-    const P = (x, y, m, t) => T.P(X(x), y, m, t);
-    const ph = f ? Math.PI : 0;
-    const path = [[22, 19], [30, 12], [40, 13], [46, 22], [45, 33], [37, 41], [27, 46], [19, 53], [19, 63], [27, 70], [40, 72], [53, 68], [62, 59], [67, 47], [70, 36], [74, 28]]
-      .map(([x, y], i) => [x + (i > 11 ? Math.sin(i * 0.9 + ph) * 1.2 : 0), y + (i > 9 ? Math.cos(i * 0.9 + ph) * 0.8 : 0)]);
-    // 尾尖火羽
-    const [tx, ty] = path[path.length - 1];
-    Tr(tx, ty, tx + 5, ty - 7, tx - 1, ty - 4, c.fin, 1); Tr(tx, ty, tx + 6, ty - 1, tx + 1, ty - 4, c.fin, 2); Tr(tx, ty, tx - 2, ty - 8, tx - 2, ty - 2, c.fin, 1);
-    // 后爪（底部盘卷处落地）
-    L(48, 70, 50, 74, c.body, 3, 2); [48, 49, 50, 51, 52].forEach(x => P(x, 75, c.horn, 1));
-    // 身体中线（设计坐标）；法线始终取行进方向右手侧 = 腹侧，保证腹甲沿 S 连续不翻面
-    const pts = T.curve(path, 6), n = pts.length;
-    const rad = i => { const t = i / (n - 1); return t < 0.4 ? 5 + 1.6 * (t / 0.4) : 6.6 - 4.9 * ((t - 0.4) / 0.6); };
-    const nrm = i => { const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)]; let nx = -(b[1] - a[1]), ny = b[0] - a[0]; const l = Math.hypot(nx, ny) || 1; return [nx / l, ny / l]; };
-    // 背鳍（火焰状，背侧）
-    for (let i = 4; i < n - 3; i += 4) {
-      const [x, y] = pts[i], [nx, ny] = nrm(i), r = rad(i), fl = 3 + r * 0.45;
-      const bx = x - nx * r, by = y - ny * r;
-      Tr(bx - ny * 1.8, by + nx * 1.8, bx - nx * fl - ny * 1.5, by - ny * fl + nx * 1.5, bx + ny * 1.8, by - nx * 1.8, c.fin, i % 8 ? 1 : 2);
-    }
-    pts.forEach(([x, y], i) => E(x, y, rad(i), rad(i), c.body));
-    // 宽腹甲（分节）+ 鳞纹
-    pts.forEach(([x, y], i) => {
-      const [nx, ny] = nrm(i), r = rad(i);
-      const bw = Math.max(1, Math.round(r * 0.5));
-      for (let k = 0; k < bw; k++) P(x + nx * (r - 0.6 - k), y + ny * (r - 0.6 - k), c.belly, k === 0 ? 1 : 0);
-      if (i % 3 === 0 && r > 2.5) for (let k = 0; k < bw; k++) P(x + nx * (r - 0.6 - k), y + ny * (r - 0.6 - k), c.belly, 2);
-      if (r > 2.5 && i % 4 === 0) for (const d of [-0.2, -0.6]) P(x + nx * r * d, y + ny * r * d, c.body, 2);
-      if (r > 2.5 && i % 4 === 2) P(x - nx * r * 0.4, y - ny * r * 0.4, c.body, 0);
-    });
-    // 前爪：从胸口向左前方探出
-    L(38, 34, 31, 37, c.body, 3, 1); L(31, 37, 28, 41, c.body, 2, 1);
-    P(26, 42, c.horn, 1); P(27, 43, c.horn, 1); P(29, 43, c.horn, 1); P(25, 40, c.horn, 1);
-    L(24, 66, 22, 72, c.body, 3, 2); [20, 21, 22, 23, 24].forEach(x => P(x, 75, c.horn, 1));
-    // 火焰鬃毛：头后一圈向后飘的尖束
-    for (const [x, y, ex, ey] of [[22, 10, 34, 4], [24, 14, 37, 10], [25, 19, 37, 20], [23, 23, 33, 28], [20, 25, 27, 32], [18, 8, 26, 1]]) {
-      Tr(x - 1.5, y - 1.5, ex, ey, x + 1.5, y + 1.5, c.mane, 1);
-      L(x, y, (x + ex) / 2, (y + ey) / 2, c.mane, 1, 0);
-    }
-    // 龙头
-    E(16, 18, 8.5, 7.2, c.body);
-    E(7, 20, 7.2, 4.2, c.body);                       // 上吻
-    E(8, 27.5, 6, 2.2, c.body);                       // 张开的下颌
-    E(8, 28.5, 5, 1.1, c.belly);
-    L(1, 24, 13, 25, c.mouth || '#6A1A2A', 2);
-    L(3, 24, 11, 25, '#E0566E', 1);
-    [[2, 23], [5, 23], [8, 23], [11, 24], [3, 26], [6, 26], [9, 26]].forEach(([x, y]) => P(x, y, '#FFFFFF'));
-    P(1, 19, '#10202A'); P(2, 18, '#10202A');         // 鼻孔
-    // 腮鬃
-    Tr(18, 23, 24, 30, 21, 21, c.mane, 2); Tr(14, 25, 17, 31, 18, 23, c.mane, 1);
-    // 鹿角（分叉，向后上方）
-    L(17, 11, 24, 1, c.horn, 2, 1); L(21, 5, 27, 4, c.horn, 1, 1); P(24, 0, c.horn, 0);
-    L(12, 12, 13, 3, c.horn, 2, 2); L(13, 6, 9, 3, c.horn, 1, 2);
-    // 眼 + 眉骨
-    T.evilEye(X(9) - (c.mir ? 1 : 0), 15, c.eye);
-    L(6, 13, 14, 12, c.body, 1, 2);
-    P(12, 16, c.body, 2);
-  }
-  function sDragonPost(T, f, c) {
-    const WD = 80, X = x => c.mir ? WD - x : x, w = f ? 1 : 0;
-    const L = (x0, y0, x1, y1, m, t) => T.L(X(x0), y0, X(x1), y1, m, 1, t);
-    // 长龙须（S 形飘动）
-    L(2, 20, -2, 15 - w, c.whisker, 0); L(-2, 15 - w, 0, 9 - w, c.whisker, 1); L(0, 9 - w, 4, 6 - w, c.whisker, 1);
-    L(4, 28, 1, 34 + w, c.whisker, 0); L(1, 34 + w, 4, 39 + w, c.whisker, 1); L(4, 39 + w, 2, 44 + w, c.whisker, 1);
-  }
-
   // ===== 炼气期 =====
   // ===== 炼气期 v3.3（面朝左）=====
   def('灰毛妖鼠', { w: 36, h: 24, ax: 16, ay: 23, frames: 2, outline: OL, draw(T, f) {
@@ -747,14 +672,44 @@ const PixelArt = (() => {
     T.P(0, 3 - b, '#FFFFFF');
   } });
 
-  const THUNDER_DRAGON = { body: 'thunder', belly: 'gold', fin: 'gold', mane: '#DDE8FF', horn: 'horn', eye: '#FFF06A', whisker: 'gold' };
-  def('劫雷真龙', { w: 82, h: 78, ax: 40, ay: 76, frames: 2, outline: '#0C1A36', draw(T, f) {
-    sDragon(T, f, THUNDER_DRAGON);
+  def('劫雷真龙', { w: 82, h: 60, ax: 34, ay: 59, frames: 2, outline: '#0C1A36', draw(T, f) {
+    const ph = f ? Math.PI : 0;
+    const wob = (pts, from, to) => pts.map(([x, y], i) => [x, y + (i >= from && i <= to ? Math.sin(i * 0.9 + ph) * 1.5 : 0)]);
+    // S 形龙身：尾巴在右上高高扬起 → 背部拱峰 → 俯冲到地面打一个大弯 → 昂首
+    const tail = wob([[81, 10], [77, 20], [70, 26], [62, 23], [56, 15], [49, 11], [42, 15], [38, 26], [34, 38], [28, 47], [20, 49]], 1, 8);
+    const neck = [[20, 49], [13, 45], [11, 36], [13, 28], [17, 23]];
+    // 尾尖雷羽
+    T.T(81, 10, 84, 2, 78, 7, 'gold', 1); T.T(81, 10, 86, 13, 79, 13, 'gold', 2); T.T(81, 10, 80, 1, 78, 9, 'gold', 1);
+    // 后爪（在拱峰下方抓空）
+    T.L(60, 24, 63, 32, 'thunder', 2, 2); T.L(63, 32, 60, 35, 'thunder', 2, 2); T.PS([[58, 36], [59, 36], [60, 36], [61, 36]], 'horn', 1);
+    T.tube(tail, 1.8, 6.2, 'thunder', { belly: 'gold', bellyStart: 8, fins: 'gold', finEvery: 7, finLen: 5, scales: true, sideX: 1 });
+    T.tube(neck, 6.2, 4.6, 'thunder', { belly: 'gold', fins: 'gold', finEvery: 8, finLen: 4, finStart: 4, finEnd: 6, scales: true, sideX: 1 });
+    // 前爪（落地）
+    T.L(22, 50, 20, 57, 'thunder', 3, 1); T.PS([[17, 58], [18, 58], [19, 58], [20, 58], [21, 58]], 'horn', 1);
+    T.L(33, 44, 35, 57, 'thunder', 3, 2); T.PS([[33, 58], [34, 58], [35, 58], [36, 58], [37, 58]], 'horn', 1);
+    // 鬃毛（向后飘）
+    T.L(21, 13, 30, 10, '#DDE8FF', 3, 1); T.L(22, 18, 31, 17, '#DDE8FF', 3, 1); T.L(20, 23, 27, 26, '#DDE8FF', 2, 2);
+    T.P(31, 9, '#FFFFFF', 0); T.P(32, 17, '#FFFFFF', 0);
+    // 龙头（更大、张口）
+    T.E(15, 17, 8.5, 7.5, 'thunder');
+    T.E(6, 20, 7, 4.2, 'thunder');
+    T.E(7, 25, 6, 1.8, 'gold');
+    T.L(0, 23, 11, 23, '#0C1A36'); T.L(1, 24, 9, 24, '#6A1A2A');
+    T.PS([[2, 22], [5, 22], [8, 22], [3, 25], [7, 25]], '#FFFFFF');
+    T.P(0, 18, '#0C1A36');
+    // 龙角（分叉）
+    T.L(15, 10, 22, 1, 'horn', 2, 1); T.L(19, 5, 24, 5, 'horn', 1, 1); T.P(23, 0, 'horn', 0);
+    T.L(11, 11, 10, 3, 'horn', 2, 2); T.L(10, 6, 7, 4, 'horn', 1, 2);
+    T.evilEye(9, 14, '#FFF06A'); T.P(10, 14, '#FFFFFF');
+    T.L(7, 12, 13, 11, '#1A2E60', 1);
   }, post(T, f) {
-    sDragonPost(T, f, THUNDER_DRAGON);
+    const w = f ? 1 : 0;
+    // 长龙须
+    T.L(2, 19, -2, 14 - w, 'gold', 1, 0); T.L(-2, 14 - w, -1, 9 - w, 'gold', 1, 1);
+    T.L(5, 26, 1, 32 + w, 'gold', 1, 0); T.L(1, 32 + w, 3, 37 + w, 'gold', 1, 1);
     // 雷光
-    if (f) { T.bolt(56, 0, 52, 14, '#FFFFFF', 3); T.bolt(78, 22, 75, 38, '#BFF4FF', 7); T.bolt(6, 50, 3, 68, '#FFFFFF', 4); }
-    else { T.bolt(36, -1, 40, 8, '#FFFFFF', 5); T.bolt(64, 30, 67, 46, '#BFF4FF', 2); T.bolt(10, 44, 6, 60, '#BFF4FF', 9); }
+    if (f) { T.bolt(52, -1, 46, 8, '#FFFFFF', 3); T.bolt(74, 30, 72, 50, '#BFF4FF', 7); T.bolt(3, 40, 1, 56, '#FFFFFF', 4); }
+    else { T.bolt(34, 0, 37, 12, '#FFFFFF', 5); T.bolt(78, 34, 80, 54, '#BFF4FF', 2); T.bolt(50, 28, 48, 44, '#BFF4FF', 9); }
   } });
 
   def('混沌古兽', { w: 52, h: 46, ax: 26, ay: 45, frames: 2, outline: '#120A20', draw(T, f) {
@@ -840,11 +795,77 @@ const PixelArt = (() => {
   } });
 
   // ===== 灵兽（面朝右）=====
-  const JADE_DRAGON = { mir: true, body: 'dragonT', belly: 'dragonBelly', fin: 'dragonFin', mane: 'dragonMane', horn: 'antler', eye: '#FFE04A', whisker: 'gold' };
-  def('jade_dragon', { w: 80, h: 78, ax: 40, ay: 76, scale: 0.62, frames: 2, outline: '#0A2A30', draw(T, f) {
-    sDragon(T, f, JADE_DRAGON);
+  def('jade_dragon', { w: 50, h: 40, ax: 24, ay: 39, frames: 2, outline: '#0A2A30', draw(T, f) {
+    const ph = f ? Math.PI : 0;
+    // 云朵托着尾巴
+    T.E(12, 37, 6, 2.2, 'cloud'); T.E(18, 38, 4, 1.8, 'cloud'); T.E(6, 38, 3.5, 1.5, 'cloud');
+    // 身体中线：Catmull-Rom 平滑曲线（尾 → 颈），中段随帧摆动
+    const ctrl = [[9, 13], [4, 15], [1, 21], [3, 28], [9, 33], [16, 33], [21, 28], [21, 21], [23, 15], [27, 11], [31, 10]]
+      .map(([x, y], i) => [x, y + (i > 1 && i < 8 ? Math.sin(i * 1.3 + ph) * 1.2 : 0)]);
+    const pts = [];
+    for (let i = 0; i < ctrl.length - 1; i++) {
+      const p0 = ctrl[Math.max(0, i - 1)], p1 = ctrl[i], p2 = ctrl[i + 1], p3 = ctrl[Math.min(ctrl.length - 1, i + 2)];
+      for (let k = 0; k < 8; k++) {
+        const t = k / 8, t2 = t * t, t3 = t2 * t;
+        const cr = (a, b, c, d) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+        pts.push([cr(p0[0], p1[0], p2[0], p3[0]), cr(p0[1], p1[1], p2[1], p3[1])]);
+      }
+    }
+    const n = pts.length;
+    const rad = i => 1.2 + 3.1 * (i / n);
+    const normal = i => { // 指向身体"下/外"侧的法线
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+      let nx = -(b[1] - a[1]), ny = b[0] - a[0];
+      const l = Math.hypot(nx, ny) || 1; nx /= l; ny /= l;
+      if (ny < 0 || (Math.abs(ny) < 0.2 && nx < 0)) { nx = -nx; ny = -ny; }
+      return [nx, ny];
+    };
+    // 尾鳍
+    T.T(9, 13, 13, 8, 11, 14, 'dragonFin', 1); T.T(9, 13, 14, 16, 10, 11, 'dragonFin', 2);
+    // 背鳍：沿身体上侧
+    for (let i = 10; i < n - 6; i += 7) {
+      const [x, y] = pts[i], [nx, ny] = normal(i), r = rad(i);
+      const bx = x - nx * r, by = y - ny * r;
+      T.T(bx - ny * 1.6, by + nx * 1.6, bx - nx * 3.2, by - ny * 3.2, bx + ny * 1.6, by - nx * 1.6, 'dragonFin', 1);
+    }
+    // 身体
+    pts.forEach(([x, y], i) => T.E(x, y, rad(i), rad(i), 'dragonT'));
+    // 连续的奶黄腹带 + 鳞纹
+    pts.forEach(([x, y], i) => {
+      if (i < 6) return;
+      const [nx, ny] = normal(i), r = rad(i);
+      T.P(x + nx * (r - 0.6), y + ny * (r - 0.6), 'dragonBelly', 1);
+      if (r > 2.2) T.P(x + nx * (r - 1.6), y + ny * (r - 1.6), 'dragonBelly', 0);
+      if (i % 5 === 0) { T.P(x - nx * r * 0.35, y - ny * r * 0.35, 'dragonT', 2); T.P(x - nx * r * 0.35 + 1, y - ny * r * 0.35, 'dragonT', 2); }
+    });
+    // 爪
+    T.L(9, 35, 8, 37, 'dragonT', 1, 2); T.PS([[7, 38], [8, 38], [9, 38]], 'horn', 1);
+    T.L(18, 34, 19, 37, 'dragonT', 1, 2); T.PS([[18, 38], [19, 38], [20, 38]], 'horn', 1);
+    T.L(24, 17, 27, 20, 'dragonT', 1, 2); T.PS([[27, 21], [28, 21], [29, 20]], 'horn', 1);
+    // 鬃毛：向后飘的毛束
+    T.L(30, 7, 25, 5, 'dragonMane', 2, 1); T.L(29, 9, 23, 9, 'dragonMane', 2, 1); T.L(29, 11, 24, 13, 'dragonMane', 1, 2);
+    T.P(24, 4, 'dragonMane', 0); T.P(22, 9, 'dragonMane', 0);
+    // 龙头
+    T.E(34, 10, 4.6, 3.8, 'dragonT');
+    T.E(40, 10, 4.4, 2.4, 'dragonT');            // 吻部
+    T.E(39, 13.5, 3.8, 1.3, 'dragonT', { lx: 0, ly: -1 }); // 下颌（张嘴）
+    T.L(36, 12, 43, 12, '#8E1F2E'); T.P(42, 13, '#E0566E'); // 口腔/舌
+    T.P(43, 11, '#FFFFFF'); T.P(40, 11, '#FFFFFF'); T.P(41, 14, '#FFFFFF');   // 牙
+    T.L(36, 15, 41, 15, 'dragonBelly', 1, 1);    // 下颌奶黄线
+    T.P(44, 9, '#0A2A30');                        // 鼻孔
+    T.evilEye(34, 8, '#FFE04A');
+    T.L(32, 7, 36, 7, 'dragonT', 1, 2);           // 眉骨
+    // 鹿角
+    T.L(33, 6, 31, 1, 'antler', 1, 1); T.L(32, 3, 29, 2, 'antler', 1, 1); T.P(31, 0, 'antler', 0);
+    T.L(36, 6, 37, 1, 'antler', 1, 1); T.L(37, 3, 39, 1, 'antler', 1, 1); T.P(37, 0, 'antler', 0);
   }, post(T, f) {
-    sDragonPost(T, f, JADE_DRAGON);
+    const w = f ? 1 : 0;
+    // 龙须（描边之后画，保持细长）
+    T.L(42, 12, 46, 15 + w, 'gold', 1, 0); T.L(46, 15 + w, 49, 14 + w, 'gold', 1, 1);
+    T.L(42, 9, 46, 7 - w, 'gold', 1, 0); T.L(46, 7 - w, 48, 8 - w, 'gold', 1, 1);
+    // 身边的小火苗
+    T.P(26, 2 + w, '#FF8A3A'); T.P(26, 1 + w, '#FFD060');
+    T.P(15, 23 - w, '#FF8A3A'); T.P(15, 22 - w, '#FFD060');
   } });
 
   // ===== 坐骑（面朝右，鼠鼠站在背上）=====
