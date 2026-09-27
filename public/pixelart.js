@@ -572,7 +572,7 @@ const PixelArt = (() => {
   } });
 
   // ===== 坐骑（面朝右，鼠鼠站在背上）=====
-  def('mount_crane', { w: 36, h: 30, ax: 16, ay: 29, frames: 2, outline: '#2A2E3A', draw(T, f) {
+  def('mount_crane', { w: 36, h: 30, ax: 16, ay: 29, frames: 2, scale: 1.5, outline: '#2A2E3A', draw(T, f) {
     const up = f === 0;
     if (up) T.T(12, 13, 1, 3, 8, 15, 'crane', 1); else T.T(12, 14, 0, 20, 7, 20, 'crane', 2);
     T.T(6, 13, 0, 11, 5, 16, '#2A2A36');                                // 黑尾羽
@@ -583,7 +583,7 @@ const PixelArt = (() => {
     T.L(14, 19, 14, 29, '#3A3A48'); T.L(19, 19, 20, 29, '#3A3A48');
     if (up) T.T(14, 13, 22, 2, 22, 14, 'cloud', 1);
   } });
-  def('mount_qilin', { w: 40, h: 32, ax: 18, ay: 31, frames: 2, outline: '#2A1606', draw(T, f) {
+  def('mount_qilin', { w: 40, h: 32, ax: 18, ay: 31, frames: 2, scale: 1.5, outline: '#2A1606', draw(T, f) {
     const b = f ? 1 : 0;
     // 火焰尾
     T.T(8, 12, 0, 8 - b, 2, 14, 'qilinMane', 1); T.T(8, 13, 1, 15 + b, 5, 16, 'fire', 1);
@@ -608,28 +608,33 @@ const PixelArt = (() => {
     const d = DEFS[name];
     if (!d) return null;
     const pad = 2;
+    const K = d.scale || 1; // 整体放大（坐标、半径同比放大，单像素细节变成 K×K 方块）
+    const sw = Math.round(d.w * K), sh = Math.round(d.h * K);
     const frames = [], flashes = [];
     for (let f = 0; f < (d.frames || 1); f++) {
-      const g = makeGrid(d.w + pad * 2, d.h + pad * 2);
+      const g = makeGrid(sw + pad * 2, sh + pad * 2);
       const T = makeTools(g);
-      // 平移：DSL 里的坐标以(0,0)为左上，留出描边空间
-      const shifted = {};
-      for (const k of Object.keys(T)) {
-        shifted[k] = T[k];
-      }
-      const off = (fn, idxs) => (...args) => { idxs.forEach(i => { if (typeof args[i] === 'number') args[i] += pad; }); return fn(...args); };
+      const sq = Math.max(1, Math.round(K));
+      const P = (x, y, c, t) => { for (let j = 0; j < sq; j++) for (let i = 0; i < sq; i++) T.P(Math.round(x * K) + pad + i, Math.round(y * K) + pad + j, c, t); };
       const W = {
-        E: off(T.E, [0, 1]), R: off(T.R, [0, 1]), T: off(T.T, [0, 1, 2, 3, 4, 5]), L: off(T.L, [0, 1, 2, 3]),
-        P: off(T.P, [0, 1]), eye: off(T.eye, [0, 1]), evilEye: off(T.evilEye, [0, 1]),
-        PS: (list, c, t) => T.PS(list.map(([x, y]) => [x + pad, y + pad]), c, t), tone: T.tone,
+        E: (cx, cy, rx, ry, m, o) => T.E(cx * K + pad, cy * K + pad, rx * K, ry * K, m, o),
+        R: (x, y, w, h, m, o) => T.R(Math.round(x * K) + pad, Math.round(y * K) + pad, Math.round(w * K), Math.round(h * K), m, o),
+        T: (x1, y1, x2, y2, x3, y3, m, t) => T.T(x1 * K + pad, y1 * K + pad, x2 * K + pad, y2 * K + pad, x3 * K + pad, y3 * K + pad, m, t),
+        L: (x0, y0, x1, y1, c, th, t) => T.L(x0 * K + pad, y0 * K + pad, x1 * K + pad, y1 * K + pad, c, Math.max(1, Math.round((th || 1) * K)), t),
+        P,
+        PS: (list, c, t) => list.forEach(([x, y]) => P(x, y, c, t)),
+        eye: (x, y, color, size) => T.eye(Math.round(x * K) + pad, Math.round(y * K) + pad, color, Math.round((size || 2) * K)),
+        evilEye: (x, y, color) => { if (K === 1) return T.evilEye(x + pad, y + pad, color); const xx = Math.round(x * K) + pad, yy = Math.round(y * K) + pad, n = Math.round(2 * K); for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) T.P(xx + i, yy + j, i >= n - 1 && j >= n - 1 ? '#1A0A10' : color); },
+        tone: T.tone,
       };
       d.draw(W, f);
       if (d.outline) outline(g, d.outline);
+      if (d.post) d.post(W, f); // 描边之后再画的细节（如胡须，保持1像素细线）
       const c = toCanvas(g);
       frames.push(c);
       flashes.push(silhouette(c, '#FFFFFF'));
     }
-    const sp = { frames, flashes, w: d.w + pad * 2, h: d.h + pad * 2, ax: d.ax + pad, ay: d.ay + pad, name };
+    const sp = { frames, flashes, w: sw + pad * 2, h: sh + pad * 2, ax: Math.round(d.ax * K) + pad, ay: Math.round(d.ay * K) + pad, name };
     cache[name] = sp;
     return sp;
   }
@@ -700,7 +705,11 @@ const PixelArt = (() => {
     draw(cctx, name, x, y, { scale: s, flip: opts.flip, frame: opts.frame });
   }
 
-  return { draw, has, size, getSprite, samplePixels, drawToCanvas, DEFS };
+  // 运行时扩展：新增调色板 / 生物定义
+  function addPalette(name, tones) { M[name] = tones; }
+  function define(name, spec) { DEFS[name] = spec; delete cache[name]; }
+
+  return { draw, has, size, getSprite, samplePixels, drawToCanvas, DEFS, addPalette, define };
 })();
 
 if (typeof module !== 'undefined') module.exports = PixelArt;

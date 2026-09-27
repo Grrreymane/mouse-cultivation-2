@@ -7,10 +7,10 @@
 // 【美术风格调整指南】
 // 1. 颜色调整 → 修改下方 C 对象的颜色常量
 // 2. 角色体型/比例 → 修改 drawMouseBody() 中的像素坐标
-// 3. 各境界外观 → 修改 drawMouseRealm0~5 各函数
+// 3. 各境界袍服 → 修改 HERO_ROBES / drawHeroBody（头部仍是 v1 原版 drawMouseBody）
 // 4. 怪物/灵兽/坐骑 → 见 pixelart.js（v3 起统一由像素雕刻DSL生成）
 // 7. 光环/特效 → 修改 drawMouseByRealm 函数中的 ellipse 光晕部分
-// 8. 武器皮肤 → 修改 weaponSkinDrawers 对象
+// 8. 武器 → WEAPON_DEFS（境界默认武器 realm0~5 + 天机阁武器外观 ws_*）
 // 9. 衣服皮肤 → 修改 armorSkinColors 颜色表
 //
 // 核心绘制API:
@@ -180,16 +180,6 @@ const Sprites = (() => {
     rect(ctx, 6*s, -6*s, 3*s, s, C.WHISKER);
   }
 
-  // 绘制鼠鼠腿脚（方块版）— v4.0
-  function drawMouseLegs(ctx, s, furMain) {
-    // 左腿（短粗Q版）
-    rect(ctx, -3*s, 3*s, 2*s, 3*s, furMain);
-    rect(ctx, -3*s, 6*s, 3*s, s, C.FUR_DARK);
-    // 右腿
-    rect(ctx, 2*s, 3*s, 2*s, 3*s, furMain);
-    rect(ctx, 1*s, 6*s, 3*s, s, C.FUR_DARK);
-  }
-
   // 绘制尾巴（方块版）— v4.0 简洁卷尾
   function drawMouseTail(ctx, s, frame, color) {
     const c = color || C.TAIL;
@@ -203,446 +193,466 @@ const Sprites = (() => {
   }
 
   // ================================================================
-  // 六种境界鼠鼠（方块像素风）
+  // 鼠鼠 v3.2 — v1 原版头部（一格不改）+ 六境界独立服装 + 柔和描边
+  // 身体坐标沿用 v1：原点在胸口，头部 y∈[-17,-4]，脚底 y=7
   // ================================================================
 
-  // --- 炼气期：小灰鼠，粗布衣 ---
-  function drawMouseRealm0(ctx, x, y, s, frame, attacking, opts) {
-    const bounce = Math.sin(frame * 0.08) * 1.5 * s;
-    const atkX = attacking ? Math.sin(attacking * 0.4) * 6 * s : 0;
-    ctx.save();
-    ctx.translate(x + atkX, y + bounce);
+  // 六境界服装设计
+  const HERO_OUTFITS = [
+    { name: '粗布短褐', robe: ['#B08458', '#8A6440', '#64462A'], trim: '#C8A060', inner: '#E8DCC0', gem: null, style: 0 },
+    { name: '青衫道袍', robe: ['#8EC0EE', '#5E98D8', '#3C6EAE'], trim: '#F2F4FA', inner: '#F2F4FA', gem: '#E8C060', style: 1 },
+    { name: '青云法袍', robe: ['#5CC4B6', '#2E9A90', '#1C6E68'], trim: '#7FF0D0', inner: '#E8F4F0', gem: '#FFD86A', style: 2 },
+    { name: '星纹华服', robe: ['#6E8CE0', '#4462B8', '#2A4284'], trim: '#E8EEF8', inner: '#1C2E5A', gem: '#9FC8FF', style: 3 },
+    { name: '紫霞仙衣', robe: ['#BC8CF0', '#8E56D0', '#6232A4'], trim: '#FFB0E0', inner: '#F4E6FF', gem: '#FF9AD0', style: 4 },
+    { name: '九天神衣', robe: ['#E65C88', '#B42458', '#7C123E'], trim: '#FFC83A', inner: '#FFF2D0', gem: '#60E0A0', style: 5 },
+  ];
+  const GOLD = ['#FFE680', '#FFC83A', '#C8901E'];
+  const HERO_GOLD = GOLD;
+  const PAW = '#E8A0B0';
+  const HERO_OUTLINE = [0x2A, 0x24, 0x40];
+  const HERO_OX = 15, HERO_OY = 21, HERO_W = 32, HERO_H = 31;
+  const heroCache = new Map();
 
-    const cl = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.main || C.CLOTH_BROWN) : C.CLOTH_BROWN;
-    const clAccent = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.accent || '#6E7D99') : '#6E7D99';
-    const clTrim = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.trim || '#3D4D66') : '#3D4D66';
+  function shadeHex(hex, k) {
+    const h = hex.replace('#', '');
+    const c = [0, 2, 4].map(i => Math.max(0, Math.min(255, Math.round(parseInt(h.slice(i, i + 2), 16) * k))));
+    return '#' + c.map(v => v.toString(16).padStart(2, '0')).join('');
+  }
 
-    drawMouseTail(ctx, s, frame);
+  // 境界服装；穿戴天机阁外观时整体换成外观自己的设计
+  function heroOutfit(realm, skinId) {
+    const base = HERO_OUTFITS[realm] || HERO_OUTFITS[0];
+    const def = skinId && SKIN_OUTFITS[skinId];
+    if (!def) return { ...base, skin: null };
+    return { name: '', robe: def.robe, trim: def.trim, inner: def.inner, gem: def.gem || def.trim, style: def.style, skin: skinId, def };
+  }
 
-    // 布衣身体（v4.0适配：紧凑躯干）
-    rect(ctx, -4*s, -4*s, 9*s, 7*s, cl);
-    rect(ctx, -3*s, -3*s, 7*s, 5*s, clAccent);
-    rect(ctx, -2*s, -2*s, 5*s, 3*s, C.FUR_BELLY);
-    // 腰带
-    rect(ctx, -4*s, 0, 9*s, s, clTrim);
-    // 衣领（V型像素线）
-    px(ctx, -s, -5*s, s, clTrim);
-    px(ctx, 0, -4*s, s, clTrim);
-    px(ctx, s, -5*s, s, clTrim);
+  // 身后的东西（先画，被身体和头遮住）
+  function drawHeroBack(c, realm, O, frame2) {
+    if (O.skin) { if (O.def.back) O.def.back(c, frame2); return; }
+    const st = O.style;
+    if (st === 0) { // 行囊
+      rect(c, -8, -4, 3, 4, '#B89A70'); rect(c, -8, -4, 3, 1, '#D8BE94'); px(c, -7, -2, 1, '#8A6A40');
+    }
+    if (st === 3) { // 披帛（从肩后绕过头顶的飘带）
+      const w = frame2 ? 1 : 0;
+      for (let x = -8; x <= 8; x++) px(c, x, -5 - Math.round(Math.sqrt(Math.max(0, 64 - x * x)) * 0.55) - (Math.abs(x) > 6 ? -w : 0), 1, '#9FC8FF');
+      px(c, -9, 1 + w, 1, '#9FC8FF'); px(c, 9, 1 - w, 1, '#9FC8FF'); px(c, -9, 0, 1, '#9FC8FF'); px(c, 9, 0, 1, '#9FC8FF');
+    }
+    if (st === 5) { // 背后光轮
+      c.fillStyle = '#FFE9A0';
+      for (let a = 0; a < 48; a++) { const t = a / 48 * Math.PI * 2; px(c, Math.round(Math.cos(t) * 10), Math.round(-10 + Math.sin(t) * 9), 1, a % 4 === 0 ? '#FFFFFF' : '#FFE9A0'); }
+    }
+  }
 
-    drawMouseBody(ctx, s, C.FUR_GREY, C.FUR_LIGHT, C.FUR_BELLY, C.EAR_PINK, C.EAR_INNER);
-    drawMouseLegs(ctx, s, C.FUR_GREY);
+  function robeRows(c, O, top, bottom, halfFn) {
+    const [lt, md, dk] = O.robe;
+    for (let y = top; y <= bottom; y++) {
+      const half = halfFn(y);
+      rect(c, -half, y, half * 2 + 1, 1, y === bottom ? dk : md);
+      px(c, -half, y, 1, y === bottom ? dk : lt);
+    }
+  }
 
-    if (opts.equippedWeaponSkin && weaponSkinDrawers[opts.equippedWeaponSkin]) {
-      ctx.save(); ctx.translate(5*s, -4*s);
-      const angle = attacking > 0 ? -0.8 + Math.sin(attacking * 0.5) * 1.5 : -0.3;
-      ctx.rotate(angle);
-      weaponSkinDrawers[opts.equippedWeaponSkin](ctx, s, frame);
-      ctx.restore();
+  function drawHeroBody(c, realm, O, pose, frame2) {
+    const [lt, md, dk] = O.robe;
+    const st = O.style;
+    const atk = pose === 'attack';
+    const rArmY = atk ? -3 : -2;
+    if (st === 0) {
+      // 粗布短褐：短上衣 + 灰裤 + 绑腿 + 草绳腰带 + 补丁
+      const pants = (O.def && O.def.pants) || '#5E6072';
+      rect(c, -3, 3, 7, 3, pants); px(c, -3, 3, 1, shadeHex(pants, 1.2));
+      rect(c, -3, 5, 2, 2, '#D8CCB0'); rect(c, 2, 5, 2, 2, '#D8CCB0'); px(c, -3, 6, 1, '#B8AC90'); px(c, 3, 6, 1, '#B8AC90');
+      robeRows(c, O, -4, 3, y => y < -2 ? 3 : 4);
+      rect(c, -1, -4, 3, 1, O.inner); px(c, 0, -3, 1, O.inner);
+      px(c, -1, -4, 1, dk); px(c, 0, -3, 1, dk); px(c, 1, -2, 1, dk); px(c, 1, -1, 1, dk);
+      rect(c, -4, 1, 9, 1, O.trim); px(c, -1, 2, 1, O.trim); px(c, -2, 3, 1, O.trim);
+      if (!O.skin) { rect(c, 2, -1, 2, 2, shadeHex(md, 0.85)); px(c, 2, -1, 1, shadeHex(md, 1.15)); } // 补丁
+      rect(c, -5, -2, 2, 3, md); px(c, -5, -2, 1, lt);
+      rect(c, 4, rArmY, 2, 3, md);
+      rect(c, -5, 1, 2, 1, PAW); rect(c, atk ? 5 : 4, rArmY + 3, 2, 1, PAW);
+      rect(c, -3, 7, 2, 1, '#9A7A50'); rect(c, 2, 7, 2, 1, '#9A7A50'); // 草鞋
+      return;
+    }
+    if (st === 6) {
+      // 铠甲：护胸 + 分片裙甲 + 大肩甲 + 护腿
+      rect(c, -3, 3, 2, 4, dk); rect(c, 2, 3, 2, 4, dk); px(c, -3, 3, 1, md); px(c, 2, 3, 1, md);
+      robeRows(c, O, -4, 1, y => y < -2 ? 3 : 4);
+      rect(c, -4, 2, 4, 2, md); rect(c, 1, 2, 4, 2, md); rect(c, -4, 3, 4, 1, dk); rect(c, 1, 3, 4, 1, dk); px(c, -4, 2, 1, lt);
+      rect(c, -4, 1, 9, 1, O.trim); px(c, 0, 1, 1, O.gem);
+      rect(c, -2, -4, 5, 1, O.inner); px(c, 0, -3, 1, O.inner);
+      rect(c, -5, -2, 2, 3, md); rect(c, 4, rArmY, 2, 3, md);
+      rect(c, -5, 1, 2, 1, PAW); rect(c, atk ? 5 : 4, rArmY + 3, 2, 1, PAW);
+      rect(c, -7, -5, 4, 3, md); rect(c, -7, -5, 4, 1, lt); px(c, -7, -3, 1, dk);
+      rect(c, 4, -5, 4, 3, md); rect(c, 4, -5, 4, 1, lt); px(c, 7, -3, 1, dk);
+      rect(c, -3, 7, 2, 1, dk); rect(c, 2, 7, 2, 1, dk);
+      return;
+    }
+    // 其余境界：长袍
+    const flare = [0, 0.2, 0.25, 0.3, 0.3, 0.35][st];
+    robeRows(c, O, -4, 6, y => Math.round(3 + (y + 4) * flare));
+    const acc = !O.skin; // 境界专属配饰只在不穿外观时出现
+    if (st === 3) { // 双层衣摆
+      rect(c, -5, 4, 11, 2, O.inner); px(c, -5, 4, 1, shadeHex(O.inner, 1.4));
+      for (let x = -4; x <= 4; x += 2) px(c, x, 5, 1, '#E8F0FF');
+    }
+    // 领口
+    if (st === 1) { // 白色宽领
+      rect(c, -2, -4, 5, 1, O.inner); rect(c, -1, -3, 3, 1, O.inner); px(c, 0, -2, 1, O.inner);
+      px(c, -2, -4, 1, '#C8D0E0'); px(c, 2, -4, 1, '#C8D0E0');
+      px(c, 0, -2, 1, dk); px(c, 1, -1, 1, dk);
+    } else if (st === 3) { // 高立领
+      rect(c, -2, -5, 5, 1, O.trim); px(c, -2, -4, 1, O.trim); px(c, 2, -4, 1, O.trim);
+      rect(c, -1, -4, 3, 1, '#E8F0FF'); px(c, 0, -3, 1, dk);
     } else {
-      drawWeapon(ctx, 5*s, -4*s, s, 0, frame, attacking);
+      rect(c, -1, -4, 3, 1, O.inner); px(c, 0, -3, 1, O.inner);
+      px(c, -1, -4, 1, dk); px(c, 0, -3, 1, dk); px(c, 1, -2, 1, dk); px(c, 2, -4, 1, dk);
     }
-
-    ctx.restore();
-  }
-
-  // --- 筑基期：亮毛色，道袍 ---
-  function drawMouseRealm1(ctx, x, y, s, frame, attacking, opts) {
-    const bounce = Math.sin(frame * 0.08) * 1.5 * s;
-    const atkX = attacking ? Math.sin(attacking * 0.4) * 8 * s : 0;
-    ctx.save();
-    ctx.translate(x + atkX, y + bounce);
-
-    const f = '#A0B0CC', l = '#B8C8E0';
-    const cl = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.main || C.CLOTH_GOLD) : C.CLOTH_GOLD;
-    const clAccent = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.accent || '#2A5A8A') : '#2A5A8A';
-    const clTrim = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.trim || '#66CCFF') : '#66CCFF';
-
-    drawMouseTail(ctx, s, frame, '#7A8CB0');
-
-    // 道袍身体（v4.0适配）
-    rect(ctx, -5*s, -4*s, 11*s, 8*s, cl);
-    rect(ctx, -4*s, -3*s, 9*s, 6*s, clAccent);
-    rect(ctx, -2*s, -2*s, 5*s, 4*s, C.FUR_BELLY);
-    // 腰带
-    rect(ctx, -5*s, 0, 11*s, s, clTrim);
-    // V领
-    px(ctx, -s, -5*s, s, clTrim);
-    px(ctx, 0, -4*s, s, clTrim);
-    px(ctx, 0, -3*s, s, clTrim);
-    px(ctx, s, -5*s, s, clTrim);
-    // 飘带
-    const ribbonWave = Math.sin(frame * 0.06) > 0 ? s : 0;
-    rect(ctx, -5*s, 5*s, s, 2*s + ribbonWave, clTrim);
-    rect(ctx, -6*s, 6*s + ribbonWave, s, s, clTrim);
-
-    drawMouseBody(ctx, s, f, l, C.FUR_BELLY, C.EAR_PINK, C.EAR_INNER);
-    drawMouseLegs(ctx, s, f);
-
-    if (opts.equippedWeaponSkin && weaponSkinDrawers[opts.equippedWeaponSkin]) {
-      ctx.save(); ctx.translate(6*s, -4*s);
-      const angle = attacking > 0 ? -0.8 + Math.sin(attacking * 0.5) * 1.5 : -0.3;
-      ctx.rotate(angle);
-      weaponSkinDrawers[opts.equippedWeaponSkin](ctx, s, frame);
-      ctx.restore();
+    // 腰带与配饰
+    if (st === 1) {
+      rect(c, -4, 0, 9, 1, (O.def && O.def.belt) || (O.skin ? shadeHex(dk, 0.7) : '#2E4E86'));
+      if (acc) { px(c, 2, 1, 1, O.gem); px(c, 2, 2, 1, O.gem); px(c, 2, 3, 1, shadeHex(O.gem, 0.7)); } // 流苏
+    } else if (st === 2) {
+      rect(c, -4, 0, 9, 1, dk); px(c, 0, 0, 1, O.gem);
+      if (acc) { rect(c, -6, 1, 2, 3, '#D8A040'); px(c, -6, 1, 1, '#F0C870'); px(c, -5, 0, 1, '#8A5A20'); } // 葫芦
+      if (acc) for (let x = -4; x <= 4; x += 3) px(c, x, 5, 1, O.trim); // 云纹
+    } else if (st === 3) {
+      rect(c, -4, 0, 9, 1, O.trim); px(c, 0, 0, 1, O.gem);
+      if (acc) for (const [x, y] of [[-2, -2], [2, 1], [-3, 2], [1, -3]]) px(c, x, y, 1, '#E8F0FF'); // 星纹
+    } else if (st === 4) {
+      rect(c, -4, 0, 9, 1, O.trim); px(c, 0, 1, 1, O.gem); px(c, 0, 2, 1, O.gem);
+      if (acc) for (const [x, y] of [[-2, 3], [2, -2], [0, 4]]) px(c, x, y, 1, '#E0C8FF'); // 灵纹
+    } else if (st === 5) {
+      const gold = acc ? GOLD : [shadeHex(O.trim, 1.2), O.trim, shadeHex(O.trim, 0.7)];
+      rect(c, -4, 0, 9, 1, gold[1]); px(c, 0, 0, 1, O.gem); px(c, -1, 0, 1, gold[0]);
+      rect(c, -6, 5, 13, 1, gold[1]); px(c, -6, 5, 1, gold[0]); // 金边衣摆
+      if (acc) for (let x = -4; x <= 4; x += 4) px(c, x, 3, 1, GOLD[0]);
+    }
+    // 披肩（金丹）/ 肩甲（元婴、大乘）
+    if (st === 2) {
+      rect(c, -4, -4, 9, 2, O.inner); px(c, -4, -4, 1, '#FFFFFF'); rect(c, -3, -2, 7, 1, O.inner);
+      px(c, 0, -3, 1, O.gem); px(c, 0, -2, 1, shadeHex(O.gem, 0.8)); // 金丹纹
+    }
+    // 袖子
+    if (st === 4) { // 长垂袖
+      rect(c, -6, -2, 2, 6, md); px(c, -6, -2, 1, lt); px(c, -6, 3, 1, dk); px(c, -5, 3, 1, dk);
+      rect(c, 5, rArmY, 2, 6, md); px(c, 6, rArmY + 5, 1, dk);
+      px(c, -7, 2 + frame2, 1, O.trim); px(c, -7, 3 + frame2, 1, O.trim); px(c, 7, 2 - frame2, 1, O.trim); px(c, 7, 3 - frame2, 1, O.trim); // 飘带
+      rect(c, -5, 4, 2, 1, PAW); rect(c, atk ? 6 : 5, rArmY + 6, 2, 1, PAW);
     } else {
-      drawWeapon(ctx, 6*s, -4*s, s, 1, frame, attacking);
+      rect(c, -5, -2, 2, 4, md); px(c, -5, -2, 1, lt);
+      rect(c, 4, rArmY, 2, 4, md);
+      const cuff = st === 1 ? O.inner : O.trim;
+      rect(c, -5, 1, 2, 1, cuff); rect(c, 4, rArmY + 3, 2, 1, cuff);
+      rect(c, -5, 2, 2, 1, PAW); rect(c, atk ? 5 : 4, rArmY + 4, 2, 1, PAW);
     }
-
-    ctx.restore();
+    if (st === 3) { rect(c, -5, -4, 2, 2, O.trim); rect(c, 4, -4, 2, 2, O.trim); px(c, -5, -4, 1, '#FFFFFF'); }
+    if (st === 5) { // 云纹金肩
+      const GOLD = acc ? HERO_GOLD : [shadeHex(O.trim, 1.2), O.trim, shadeHex(O.trim, 0.7)];
+      rect(c, -6, -4, 3, 2, GOLD[1]); px(c, -6, -4, 1, GOLD[0]); px(c, -7, -3, 1, GOLD[2]);
+      rect(c, 4, -4, 3, 2, GOLD[1]); px(c, 6, -3, 1, GOLD[2]); px(c, 7, -3, 1, GOLD[2]);
+    }
+    // 小脚
+    rect(c, -3, 7, 2, 1, PAW); rect(c, 2, 7, 2, 1, PAW);
   }
 
-  // --- 金丹期：法袍+浮空 ---
-  function drawMouseRealm2(ctx, x, y, s, frame, attacking, opts) {
-    const float = Math.sin(frame * 0.04) * 2 * s;
-    const atkX = attacking ? Math.sin(attacking * 0.4) * 10 * s : 0;
-    ctx.save();
-    ctx.translate(x + atkX, y + float);
-
-    const f = '#A8BBDD', l = '#C0D4F0';
-    const cl = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.main || C.CLOTH_GREEN) : C.CLOTH_GREEN;
-    const clAccent = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.accent || '#1A6B6B') : '#1A6B6B';
-    const clTrim = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.trim || '#44DDBB') : '#44DDBB';
-
-    drawMouseTail(ctx, s, frame, '#6688AA');
-
-    // 法袍（v4.0适配：紧凑躯干+浮空）
-    rect(ctx, -5*s, -4*s, 11*s, 9*s, cl);
-    rect(ctx, -4*s, -3*s, 9*s, 7*s, clAccent);
-    rect(ctx, -2*s, -2*s, 5*s, 4*s, C.FUR_BELLY);
-    // 金丹纹饰（闪烁像素块）
-    ctx.globalAlpha = 0.3 + Math.sin(frame * 0.04) * 0.15;
-    rect(ctx, -s, -s, 3*s, 2*s, '#44FFCC');
-    ctx.globalAlpha = 1;
-    // 腰带
-    rect(ctx, -5*s, 0, 11*s, s, clTrim);
-    // 玉佩
-    px(ctx, -4*s, 2*s, s, '#44DDBB');
-    px(ctx, -4*s, 3*s, s, '#88FFE0');
-    // V领
-    px(ctx, -2*s, -5*s, s, clTrim);
-    px(ctx, -s, -4*s, s, clTrim);
-    px(ctx, 0, -4*s, s, clTrim);
-    px(ctx, s, -4*s, s, clTrim);
-    px(ctx, 2*s, -5*s, s, clTrim);
-
-    // 浮空气流（方块版）
-    ctx.globalAlpha = 0.15;
-    for (let i = 0; i < 3; i++) {
-      const py = 8*s + Math.sin(frame * 0.05 + i) * s;
-      rect(ctx, -3*s + i * 3*s, py, 2*s, s, '#88CCCC');
+  function drawHeroHeadwear(c, realm, O) {
+    if (O.skin) { if (O.def.head) O.def.head(c); return; }
+    const st = O.style;
+    if (st === 1) { rect(c, -1, -15, 3, 2, O.robe[2]); px(c, -2, -15, 1, '#B08050'); px(c, 2, -15, 1, '#B08050'); } // 发髻木簪
+    else if (st === 2) { rect(c, -1, -15, 3, 2, O.robe[1]); px(c, 0, -16, 1, O.trim); px(c, -2, -14, 1, O.trim); } // 玉簪
+    else if (st === 3) { rect(c, -2, -14, 5, 1, '#E8EEF8'); px(c, -2, -15, 1, '#E8EEF8'); px(c, 2, -15, 1, '#E8EEF8'); px(c, 0, -15, 1, '#9FC8FF'); } // 银冠
+    else if (st === 4) { px(c, -2, -14, 1, '#FF9AD0'); px(c, 2, -14, 1, '#FF9AD0'); rect(c, -1, -15, 3, 2, '#FFB0E0'); px(c, 0, -16, 1, '#FFE0F0'); } // 莲花冠
+    else if (st === 5) { // 金冠
+      rect(c, -2, -15, 5, 2, GOLD[1]); px(c, -2, -16, 1, GOLD[1]); px(c, 0, -17, 1, GOLD[1]); px(c, 2, -16, 1, GOLD[1]);
+      px(c, 0, -16, 1, GOLD[0]); px(c, 0, -15, 1, '#FF5A6A');
     }
-    ctx.globalAlpha = 1;
-
-    drawMouseBody(ctx, s, f, l, C.FUR_BELLY, C.EAR_PINK, C.EAR_INNER);
-    drawMouseLegs(ctx, s, f);
-
-    if (opts.equippedWeaponSkin && weaponSkinDrawers[opts.equippedWeaponSkin]) {
-      ctx.save(); ctx.translate(6*s, -4*s);
-      const angle = attacking > 0 ? -0.8 + Math.sin(attacking * 0.5) * 1.5 : -0.3;
-      ctx.rotate(angle);
-      weaponSkinDrawers[opts.equippedWeaponSkin](ctx, s, frame);
-      ctx.restore();
-    } else {
-      drawWeapon(ctx, 6*s, -4*s, s, 2, frame, attacking);
-    }
-
-    ctx.restore();
   }
 
-  // --- 元婴期：华服，浮空更高 ---
-  function drawMouseRealm3(ctx, x, y, s, frame, attacking, opts) {
-    const float = Math.sin(frame * 0.04) * 3 * s - 3*s;
-    const atkX = attacking ? Math.sin(attacking * 0.4) * 12 * s : 0;
-    ctx.save();
-    ctx.translate(x + atkX, y + float);
-
-    const f = '#B0C0E0', l = '#C8D8F5';
-    const cl = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.main || C.CLOTH_BLUE) : C.CLOTH_BLUE;
-    const clAccent = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.accent || '#2A4A8A') : '#2A4A8A';
-    const clTrim = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.trim || '#66AAFF') : '#66AAFF';
-
-    drawMouseTail(ctx, s, frame, '#5577AA');
-
-    // 华服（v4.0适配：紧凑+高级）
-    rect(ctx, -6*s, -4*s, 13*s, 10*s, cl);
-    rect(ctx, -5*s, -3*s, 11*s, 8*s, clAccent);
-    rect(ctx, -2*s, -2*s, 5*s, 5*s, C.FUR_BELLY);
-    // 灵纹（旋转方块像素）
-    ctx.globalAlpha = 0.25;
-    for (let i = 0; i < 3; i++) {
-      const a = frame * 0.02 + i * 2.1;
-      const rx = Math.cos(a) * 3 * s;
-      const ry = Math.sin(a) * 3 * s;
-      px(ctx, rx, ry, s, '#88BBFF');
-    }
-    ctx.globalAlpha = 1;
-    // 腰带+宝石
-    rect(ctx, -6*s, 0, 13*s, s, clTrim);
-    rect(ctx, 0, 0, s, s, '#4488FF');
-    // 肩饰（方块）
-    rect(ctx, -6*s, -4*s, 2*s, 2*s, clTrim);
-    rect(ctx, 5*s, -4*s, 2*s, 2*s, clTrim);
-    // V领
-    px(ctx, -2*s, -5*s, s, clTrim);
-    px(ctx, -s, -4*s, s, clTrim);
-    px(ctx, 0, -4*s, s, clTrim);
-    px(ctx, s, -4*s, s, clTrim);
-    px(ctx, 2*s, -5*s, s, clTrim);
-    // 飘带
-    const rw = Math.sin(frame * 0.05) > 0 ? s : 0;
-    rect(ctx, -6*s, 6*s, s, 2*s + rw, clTrim);
-    rect(ctx, -7*s, 7*s + rw, s, s, clTrim);
-    rect(ctx, 6*s, 6*s, s, 2*s + rw, clTrim);
-    rect(ctx, 7*s, 7*s + rw, s, s, clTrim);
-
-    drawMouseBody(ctx, s, f, l, C.FUR_BELLY, C.EAR_PINK, C.EAR_INNER);
-    drawMouseLegs(ctx, s, f);
-
-    if (opts.equippedWeaponSkin && weaponSkinDrawers[opts.equippedWeaponSkin]) {
-      ctx.save(); ctx.translate(7*s, -4*s);
-      const angle = attacking > 0 ? -0.8 + Math.sin(attacking * 0.5) * 1.5 : -0.3;
-      ctx.rotate(angle);
-      weaponSkinDrawers[opts.equippedWeaponSkin](ctx, s, frame);
-      ctx.restore();
-    } else {
-      drawWeapon(ctx, 7*s, -4*s, s, 3, frame, attacking);
-    }
-
-    ctx.restore();
-  }
-
-  // --- 化神期：仙袍飘逸，光效强 ---
-  function drawMouseRealm4(ctx, x, y, s, frame, attacking, opts) {
-    const float = Math.sin(frame * 0.03) * 4 * s - 6*s;
-    const atkX = attacking ? Math.sin(attacking * 0.4) * 14 * s : 0;
-    ctx.save();
-    ctx.translate(x + atkX, y + float);
-
-    const f = '#B8C8E8', l = '#D0E0FF';
-    const cl = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.main || C.CLOTH_PURPLE) : C.CLOTH_PURPLE;
-    const clAccent = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.accent || '#5A2A9F') : '#5A2A9F';
-    const clTrim = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.trim || '#BB88FF') : '#BB88FF';
-
-    drawMouseTail(ctx, s, frame, '#7788CC');
-
-    // 仙袍（v4.0适配：紧凑+飘逸下摆）
-    rect(ctx, -6*s, -4*s, 13*s, 10*s, cl);
-    rect(ctx, -7*s, 4*s, 15*s, 3*s, cl); // 下摆
-    rect(ctx, -5*s, -3*s, 11*s, 8*s, clAccent);
-    rect(ctx, -2*s, -2*s, 5*s, 5*s, C.FUR_BELLY);
-    // 符文光（闪烁像素块）
-    ctx.globalAlpha = 0.2 + Math.sin(frame * 0.03) * 0.1;
-    for (let i = 0; i < 4; i++) {
-      const a = frame * 0.015 + i * 1.57;
-      const r = (3 + i) * s;
-      px(ctx, Math.cos(a) * r, Math.sin(a) * r, s, '#BB88FF');
-    }
-    ctx.globalAlpha = 1;
-    // 腰带
-    rect(ctx, -6*s, 0, 13*s, s, clTrim);
-    // 紫玉坠
-    rect(ctx, 0, 0, s, s, '#9944FF');
-    px(ctx, 0, s, s, '#CC88FF');
-    // 肩甲（方块+宝石）
-    rect(ctx, -6*s, -4*s, 2*s, 2*s, clTrim);
-    px(ctx, -5*s, -4*s, s, '#FF88FF');
-    rect(ctx, 5*s, -4*s, 2*s, 2*s, clTrim);
-    px(ctx, 6*s, -4*s, s, '#FF88FF');
-    // V领
-    px(ctx, -2*s, -5*s, s, clTrim);
-    px(ctx, -s, -4*s, s, clTrim);
-    px(ctx, 0, -4*s, s, clTrim);
-    px(ctx, s, -4*s, s, clTrim);
-    px(ctx, 2*s, -5*s, s, clTrim);
-    // 长飘带（方块像素线）
-    const rw = Math.sin(frame * 0.04) > 0 ? s : 0;
-    rect(ctx, -7*s, 7*s, s, 3*s + rw, clTrim);
-    rect(ctx, -8*s, 9*s + rw, s, 2*s, clTrim);
-    rect(ctx, -9*s, 10*s + rw, s, s, clTrim);
-    rect(ctx, 7*s, 7*s, s, 3*s + rw, clTrim);
-    rect(ctx, 8*s, 9*s + rw, s, 2*s, clTrim);
-    rect(ctx, 9*s, 10*s + rw, s, s, clTrim);
-
-    drawMouseBody(ctx, s, f, l, C.FUR_BELLY, C.EAR_PINK, C.EAR_INNER);
-    drawMouseLegs(ctx, s, f);
-
-    if (opts.equippedWeaponSkin && weaponSkinDrawers[opts.equippedWeaponSkin]) {
-      ctx.save(); ctx.translate(7*s, -4*s);
-      const angle = attacking > 0 ? -0.8 + Math.sin(attacking * 0.5) * 1.5 : -0.3;
-      ctx.rotate(angle);
-      weaponSkinDrawers[opts.equippedWeaponSkin](ctx, s, frame);
-      ctx.restore();
-    } else {
-      drawWeapon(ctx, 7*s, -4*s, s, 4, frame, attacking);
-    }
-
-    ctx.restore();
-  }
-
-  // --- 大乘期：天衣，极强光效 ---
-  function drawMouseRealm5(ctx, x, y, s, frame, attacking, opts) {
-    const float = Math.sin(frame * 0.03) * 5 * s - 9*s;
-    const atkX = attacking ? Math.sin(attacking * 0.4) * 16 * s : 0;
-    ctx.save();
-    ctx.translate(x + atkX, y + float);
-
-    const f = '#C0D0F0', l = '#D8E8FF';
-    const cl = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.main || C.CLOTH_RED) : C.CLOTH_RED;
-    const clAccent = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.accent || '#801848') : '#801848';
-    const clTrim = opts.equippedArmorSkin ? (armorSkinColors[opts.equippedArmorSkin]?.trim || '#FF88CC') : '#FF88CC';
-
-    drawMouseTail(ctx, s, frame, '#8899DD');
-
-    // 天衣光华（方块光晕）
-    ctx.globalAlpha = 0.08 + Math.sin(frame * 0.02) * 0.04;
-    rect(ctx, -16*s, -16*s, 33*s, 33*s, '#FF66BB');
-    ctx.globalAlpha = 1;
-
-    // 天衣身体（v4.0适配：紧凑+最华丽）
-    rect(ctx, -7*s, -4*s, 15*s, 11*s, cl);
-    rect(ctx, -8*s, 5*s, 17*s, 4*s, cl); // 大下摆
-    rect(ctx, -6*s, -3*s, 13*s, 9*s, clAccent);
-    rect(ctx, -3*s, -2*s, 7*s, 6*s, C.FUR_BELLY);
-
-    // 天衣纹饰（旋转像素符文）
-    ctx.globalAlpha = 0.25 + Math.sin(frame * 0.025) * 0.1;
-    for (let i = 0; i < 6; i++) {
-      const a = frame * 0.012 + i * 1.05;
-      const r = (3 + i % 3 * 2) * s;
-      px(ctx, Math.cos(a) * r, Math.sin(a) * r, s, '#FF88CC');
-    }
-    ctx.globalAlpha = 1;
-
-    // 天冠（方块版头饰）
-    rect(ctx, -s, -16*s, 3*s, 2*s, '#FFD700');
-    px(ctx, 0, -17*s, s, '#FFFFAA');
-    ctx.globalAlpha = 0.4 + Math.sin(frame * 0.06) * 0.3;
-    rect(ctx, -2*s, -17*s, 5*s, 3*s, '#FFD70066');
-    ctx.globalAlpha = 1;
-
-    // 腰带
-    rect(ctx, -7*s, 0, 15*s, s, clTrim);
-    // 神玉
-    rect(ctx, 0, 0, s, s, '#FF3388');
-    px(ctx, 0, s, s, '#FF88BB');
-    // 大型肩甲
-    rect(ctx, -7*s, -4*s, 2*s, 2*s, clTrim);
-    px(ctx, -6*s, -4*s, s, '#FF44AA');
-    rect(ctx, 6*s, -4*s, 2*s, 2*s, clTrim);
-    px(ctx, 7*s, -4*s, s, '#FF44AA');
-    // V领
-    px(ctx, -2*s, -5*s, s, clTrim);
-    px(ctx, -s, -4*s, s, clTrim);
-    px(ctx, 0, -4*s, s, clTrim);
-    px(ctx, s, -4*s, s, clTrim);
-    px(ctx, 2*s, -5*s, s, clTrim);
-
-    // 多条长飘带
-    const rw = Math.sin(frame * 0.035) > 0 ? s : 0;
-    for (let i = 0; i < 2; i++) {
-      const c = i === 0 ? clTrim : '#FF88CC88';
-      rect(ctx, -8*s - i*s, 9*s, s, 4*s + rw, c);
-      rect(ctx, -9*s - i*s, 12*s + rw, s, 2*s, c);
-      rect(ctx, -10*s - i*s, 13*s + rw, s, 2*s, c);
-      rect(ctx, 8*s + i*s, 9*s, s, 4*s + rw, c);
-      rect(ctx, 9*s + i*s, 12*s + rw, s, 2*s, c);
-      rect(ctx, 10*s + i*s, 13*s + rw, s, 2*s, c);
-    }
-
-    drawMouseBody(ctx, s, f, l, C.FUR_BELLY, C.EAR_PINK, C.EAR_INNER);
-    drawMouseLegs(ctx, s, f);
-
-    // 仙气粒子（方块版）
-    ctx.globalAlpha = 0.3;
-    for (let i = 0; i < 5; i++) {
-      const a = frame * 0.02 + i * 1.257;
-      const pr = 12 * s;
-      px(ctx, Math.cos(a) * pr, -2*s + Math.sin(a) * pr * 0.6, s, '#FFAADD');
-    }
-    ctx.globalAlpha = 1;
-
-    if (opts.equippedWeaponSkin && weaponSkinDrawers[opts.equippedWeaponSkin]) {
-      ctx.save(); ctx.translate(8*s, -4*s);
-      const angle = attacking > 0 ? -0.8 + Math.sin(attacking * 0.5) * 1.5 : -0.3;
-      ctx.rotate(angle);
-      weaponSkinDrawers[opts.equippedWeaponSkin](ctx, s, frame);
-      ctx.restore();
-    } else {
-      drawWeapon(ctx, 8*s, -4*s, s, 5, frame, attacking);
-    }
-
-    ctx.restore();
-  }
-
-  // ================================================================
-  // 武器绘制 — 方块像素版
-  // ================================================================
-  function drawWeapon(ctx, x, y, s, tier, frame, attacking) {
-    ctx.save();
-    ctx.translate(x, y);
-    const angle = attacking > 0 ? -0.8 + Math.sin(attacking * 0.5) * 1.5 : -0.3;
-    ctx.rotate(angle);
-
-    const weapons = [
-      { blade: C.WOOD, hilt: C.HANDLE, len: 7, w: 2 },
-      { blade: C.IRON, hilt: C.HANDLE, len: 8, w: 2 },
-      { blade: C.STEEL, hilt: '#5A6B8A', len: 9, w: 2, glow: C.MAGIC_BLUE },
-      { blade: '#88AAEE', hilt: '#4A5570', len: 10, w: 2, glow: C.MAGIC_PURPLE },
-      { blade: '#BB88FF', hilt: '#3A2A5A', len: 11, w: 2, glow: C.MAGIC_PINK },
-      { blade: '#FFD700', hilt: '#880044', len: 12, w: 3, glow: '#FFD700' },
-    ];
-    const w = weapons[tier] || weapons[0];
-
-    // 剑柄（方块）
-    rect(ctx, -s, 0, w.w*s, 3*s, w.hilt);
-    // 护手
-    rect(ctx, -w.w*s, -s, w.w*2*s, s, w.hilt);
-    // 剑身（方块）
-    rect(ctx, -s, -w.len*s, w.w*s, w.len*s, w.blade);
-    // 剑尖
-    rect(ctx, 0, -(w.len+1)*s, s, s, w.blade);
-
-    // 灵光
-    if (w.glow) {
-      ctx.globalAlpha = 0.25 + Math.sin(frame * 0.06) * 0.15;
-      rect(ctx, -s, -w.len*s, w.w*s, w.len*s, w.glow);
-      ctx.globalAlpha = 1;
-    }
-
-    ctx.restore();
-  }
-
-
-  // ================================================================
-  // 武器皮肤 (已是方块风格)
-  // ================================================================
-  const weaponSkinDrawers = {
-    'ws_bamboo': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#2E5E1E'); rect(ctx,-s,0,3*s,s,'#4A8B2A'); rect(ctx,-s/2,-9*s,2*s,9*s,'#4A8B2A'); for(let i=0;i<3;i++) rect(ctx,-s,-8*s+i*3*s,3*s,s,'#2E5E1E'); rect(ctx,0,-10*s,s,s,'#8BC34A'); },
-    'ws_rusty': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#5D4037'); rect(ctx,-s,0,3*s,s,'#8B7355'); rect(ctx,-s/2,-8*s,2*s,8*s,'#8B6914'); rect(ctx,0,-9*s,s,s,'#A08040'); rect(ctx,0,-6*s,s,s,'#CC6600'); rect(ctx,-s/2,-3*s,s,s,'#996633'); },
-    'ws_bone': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#8B7355'); rect(ctx,-s,0,3*s,s,'#DDD'); rect(ctx,-s/2,-9*s,2*s,9*s,'#E8DCC8'); rect(ctx,0,-10*s,s,s,'#FFF'); for(let i=0;i<2;i++){rect(ctx,-s,-7*s+i*4*s,s,2*s,'#DDD'); rect(ctx,s,-5*s+i*4*s,s,2*s,'#DDD');} },
-    'ws_jade': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#2E7D32'); rect(ctx,-s,0,3*s,s,'#4CAF50'); rect(ctx,-s/2,-9*s,2*s,9*s,'#66BB6A'); ctx.globalAlpha=0.4+Math.sin(frame*0.06)*0.2; rect(ctx,0,-9*s,s,9*s,'#A5D6A7'); ctx.globalAlpha=1; },
-    'ws_blood': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#4A0000'); rect(ctx,-s,0,3*s,s,'#800000'); rect(ctx,-s/2,-9*s,2*s,9*s,'#CC0000'); rect(ctx,0,-10*s,s,s,'#FF0000'); ctx.globalAlpha=0.3+Math.sin(frame*0.08)*0.2; for(let i=0;i<3;i++) px(ctx,-s/2+Math.sin(frame*0.05+i)*s,-8*s+i*3*s,s,'#FF0000'); ctx.globalAlpha=1; },
-    'ws_ice': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#1A5276'); rect(ctx,-s,0,3*s,s,'#5DADE2'); rect(ctx,-s/2,-10*s,2*s,10*s,'#85C1E9'); rect(ctx,0,-11*s,s,s,'#D6EAF8'); ctx.globalAlpha=0.3+Math.sin(frame*0.07)*0.2; rect(ctx,-s/2,-10*s,2*s,10*s,'#AED6F1'); ctx.globalAlpha=1; },
-    'ws_flame': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#5D4037'); rect(ctx,-s,0,3*s,s,'#FF6F00'); rect(ctx,-s/2,-9*s,2*s,9*s,'#FF8F00'); rect(ctx,0,-10*s,s,s,'#FFD600'); ctx.globalAlpha=0.4+Math.sin(frame*0.1)*0.3; for(let i=0;i<4;i++) rect(ctx,-s+Math.sin(frame*0.08+i)*s,-9*s+i*2.5*s,s,s,'#FF6F00'); ctx.globalAlpha=1; },
-    'ws_shadow': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#1A1A2E'); rect(ctx,-s,0,3*s,s,'#4A148C'); rect(ctx,-s/2,-10*s,2*s,10*s,'#311B92'); rect(ctx,0,-11*s,s,s,'#7C4DFF'); ctx.globalAlpha=0.25+Math.sin(frame*0.05)*0.15; rect(ctx,-s,-10*s,3*s,10*s,'#7C4DFF'); ctx.globalAlpha=1; },
-    'ws_thunder': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#4A5568'); rect(ctx,-s,0,3*s,s,'#F6E05E'); rect(ctx,-s/2,-10*s,2*s,10*s,'#ECC94B'); rect(ctx,0,-11*s,s,s,'#FEFCBF'); ctx.globalAlpha=0.5+Math.sin(frame*0.15)*0.4; for(let i=0;i<3;i++) px(ctx,-s+Math.random()*2*s,-9*s+i*3*s,s,'#FFFFF0'); ctx.globalAlpha=1; },
-    'ws_moonlight': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#2C3E50'); rect(ctx,-s,0,3*s,s,'#BDC3C7'); rect(ctx,-s/2,-10*s,2*s,10*s,'#ECF0F1'); rect(ctx,0,-11*s,s,s,'#FFFFFF'); ctx.globalAlpha=0.3+Math.sin(frame*0.04)*0.2; rect(ctx,-s,-10*s,3*s,10*s,'#F0F3F4'); ctx.globalAlpha=1; },
-    'ws_vine': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#1B5E20'); rect(ctx,-s,0,3*s,s,'#2E7D32'); rect(ctx,-s/2,-9*s,2*s,9*s,'#4CAF50'); for(let i=0;i<4;i++) rect(ctx,(i%2===0?-s:s),-8*s+i*2*s,s,s,'#81C784'); rect(ctx,0,-10*s,s,s,'#A5D6A7'); },
-    'ws_crystal': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#4A148C'); rect(ctx,-s,0,3*s,s,'#CE93D8'); rect(ctx,-s/2,-10*s,2*s,10*s,'#E1BEE7'); rect(ctx,-s,-11*s,3*s,s,'#F3E5F5'); ctx.globalAlpha=0.3+Math.sin(frame*0.06)*0.2; rect(ctx,-s,-10*s,3*s,10*s,'#F3E5F5'); ctx.globalAlpha=1; },
-    'ws_demon': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#1A1A1A'); rect(ctx,-2*s,-s,5*s,2*s,'#B71C1C'); rect(ctx,-s,-11*s,3*s,11*s,'#D32F2F'); rect(ctx,-s/2,-12*s,2*s,s,'#FF5252'); ctx.globalAlpha=0.2+Math.sin(frame*0.04)*0.15; rect(ctx,-s,-11*s,3*s,11*s,'#FF1744'); ctx.globalAlpha=1; },
-    'ws_dragon': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#1B5E20'); rect(ctx,-2*s,-s,5*s,2*s,'#DAA520'); rect(ctx,-s,-11*s,3*s,11*s,'#2E7D32'); rect(ctx,0,-12*s,s,s,'#FFD700'); /* 龙鳞纹 */ for(let i=0;i<4;i++) px(ctx,-s+((i+1)%2)*s,-10*s+i*2.5*s,s,'#FFD700'); /* 龙首护手 */ rect(ctx,-2*s,-s,s,2*s,'#DAA520'); rect(ctx,2*s,-s,s,2*s,'#DAA520'); px(ctx,-2*s,-2*s,s,'#FFD700'); px(ctx,2*s,-2*s,s,'#FFD700'); ctx.globalAlpha=0.2+Math.sin(frame*0.05)*0.1; rect(ctx,-s,-11*s,3*s,11*s,'#FFD700'); ctx.globalAlpha=1; },
-    'ws_phoenix': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#BF360C'); rect(ctx,-2*s,-s,5*s,2*s,'#FF6F00'); rect(ctx,-s,-11*s,3*s,11*s,'#FF8F00'); rect(ctx,0,-12*s,s,s,'#FFD600'); ctx.globalAlpha=0.4+Math.sin(frame*0.08)*0.3; for(let i=0;i<5;i++) px(ctx,-s+Math.sin(frame*0.06+i)*s*1.5,-11*s+i*2.5*s,s,i%2===0?'#FF6F00':'#FFD600'); ctx.globalAlpha=1; },
-    'ws_void': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#0D0D0D'); rect(ctx,-2*s,-s,5*s,2*s,'#4A148C'); rect(ctx,-s,-12*s,3*s,12*s,'#1A0033'); rect(ctx,0,-13*s,s,s,'#7C4DFF'); for(let i=0;i<4;i++){ctx.globalAlpha=0.4+Math.sin(frame*0.05+i*0.7)*0.3; px(ctx,-s+Math.sin(i*2.1)*s,-11*s+i*3*s,s,'#B388FF');} ctx.globalAlpha=1; },
-    'ws_celestial': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#5D4037'); rect(ctx,-2*s,-s,5*s,2*s,'#FFD700'); rect(ctx,-s,-12*s,3*s,12*s,'#FFC107'); rect(ctx,-s/2,-13*s,2*s,s,'#FFFFF0'); ctx.globalAlpha=0.5+Math.sin(frame*0.035)*0.3; rect(ctx,-s,-12*s,3*s,12*s,'#FFD700'); ctx.globalAlpha=1; },
-    'ws_heavenly': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#0D47A1'); rect(ctx,-2*s,-s,5*s,2*s,'#FFD700'); ctx.globalAlpha=0.8+Math.sin(frame*0.04)*0.2; rect(ctx,-s,-11*s,3*s,11*s,'#FFC107'); ctx.globalAlpha=1; },
-    'ws_primordial': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#880000'); rect(ctx,-2*s,-s,5*s,2*s,'#FFD700'); rect(ctx,-s,-13*s,3*s,13*s,'#FFD700'); rect(ctx,-s/2,-14*s,2*s,s,'#FFFFAA'); for(let i=0;i<6;i++){const a=frame*0.02+i*Math.PI/3; ctx.globalAlpha=0.6+Math.sin(frame*0.04+i)*0.3; rect(ctx,Math.cos(a)*3*s,-7*s+Math.sin(a)*5*s,s,s,'#FFFFFF');} ctx.globalAlpha=0.5; rect(ctx,-s,-13*s,3*s,13*s,'#FFD700'); ctx.globalAlpha=1; },
-    'ws_cosmic': (ctx,s,frame) => { rect(ctx,0,0,s,3*s,'#0D0D2B'); rect(ctx,-2*s,-s,5*s,2*s,'#00BCD4'); const grad=ctx.createLinearGradient(-s,-14*s,2*s,0); grad.addColorStop(0,'#1A237E'); grad.addColorStop(0.5,'#0D47A1'); grad.addColorStop(1,'#01579B'); ctx.fillStyle=grad; ctx.fillRect(-s,-14*s,3*s,14*s); for(let i=0;i<8;i++){ctx.globalAlpha=0.5+Math.sin(frame*0.06+i*0.8)*0.5; rect(ctx,-s+Math.sin(i*1.7)*s*1.5,-13*s+i*1.8*s,s*0.8,s*0.8,'#FFFFFF');} ctx.globalAlpha=0.45+Math.sin(frame*0.025)*0.2; ctx.fillStyle='#00BCD4'; ctx.fillRect(-s,-14*s,3*s,14*s); ctx.globalAlpha=1; },
+  // 天机阁衣服外观：每款自带轮廓(style) / 配色 / 背饰(back) / 前饰(front) / 头饰(head)
+  // style: 0 短褐 1 长袍 2 披肩袍 3 华服 4 长袖仙衣 5 神衣 6 铠甲
+  const SKIN_OUTFITS = {
+    as_patched: { style: 0, robe: ['#A8A884', '#84845E', '#5E5E42'], trim: '#8A6A40', inner: '#E0DAC0',
+      front: c => { rect(c, -3, -2, 2, 2, '#6A8AB0'); rect(c, 2, 1, 2, 2, '#B07A5A'); rect(c, -2, 2, 2, 1, '#8AB06A'); px(c, -1, -2, 1, '#F0E8D0'); px(c, 3, 2, 1, '#F0E8D0'); },
+      head: c => { rect(c, -5, -13, 11, 1, '#8A6A40'); px(c, -6, -13, 1, '#8A6A40'); px(c, -7, -12, 1, '#8A6A40'); px(c, -7, -11, 1, '#A8845A'); } },
+    as_farmer: { style: 0, robe: ['#D8C498', '#B8A070', '#8A7448'], trim: '#6A8A3A', inner: '#F4F0E0',
+      front: c => { rect(c, -3, -4, 7, 1, '#FFFFFF'); px(c, 3, -3, 1, '#FFFFFF'); px(c, 3, -2, 1, '#E0E0E0'); },
+      head: c => { rect(c, -7, -14, 15, 1, '#C8A860'); rect(c, -5, -15, 11, 1, '#D8BE78'); rect(c, -3, -16, 7, 1, '#E8D090'); px(c, 0, -17, 1, '#E8D090'); px(c, -7, -14, 1, '#A88840'); px(c, 7, -14, 1, '#A88840'); } },
+    as_scholar: { style: 1, robe: ['#FFFFFF', '#EEF0F4', '#C8CCD8'], trim: '#2A2A3A', inner: '#FFFFFF', belt: '#2A2A3A',
+      front: c => { rect(c, -3, 1, 2, 3, '#3A5A9A'); px(c, -3, 1, 1, '#5A7ABA'); px(c, -2, 2, 1, '#E8E0C8'); },
+      head: c => { rect(c, -2, -15, 5, 2, '#2A2A3A'); rect(c, -3, -14, 7, 1, '#2A2A3A'); px(c, 3, -15, 1, '#3A3A4A'); },
+      back: c => { px(c, 4, -12, 1, '#2A2A3A'); px(c, 5, -11, 1, '#2A2A3A'); px(c, 5, -10, 1, '#3A3A4A'); } },
+    as_bamboo: { style: 1, robe: ['#8AC87A', '#5A9E4A', '#3A7430'], trim: '#C8E8A0', inner: '#EEF8E0',
+      front: c => { for (const [x, y] of [[-3, -1], [-2, 2], [2, -2], [3, 3], [-1, 4]]) { px(c, x, y, 1, '#2E5E22'); px(c, x + 1, y - 1, 1, '#2E5E22'); } },
+      head: c => { px(c, 0, -14, 1, '#6DAA3E'); px(c, 1, -15, 1, '#8BD150'); px(c, 2, -16, 1, '#8BD150'); px(c, -1, -14, 1, '#4A8B2A'); },
+      back: c => { for (let i = 0; i < 9; i++) px(c, -7 + i, -2 - i, 1, i % 3 === 2 ? '#2E5E1E' : '#6DAA3E'); } },
+    as_cloud: { style: 2, robe: ['#D0E0F4', '#A8C0E0', '#7890BC'], trim: '#FFFFFF', inner: '#FFFFFF',
+      front: c => { for (const [x, y] of [[-3, 3], [2, 1], [-1, 5]]) { px(c, x, y, 1, '#FFFFFF'); px(c, x + 1, y, 1, '#FFFFFF'); px(c, x, y - 1, 1, '#FFFFFF'); } },
+      head: c => { rect(c, -3, -14, 3, 1, '#FFFFFF'); rect(c, 1, -14, 3, 1, '#FFFFFF'); rect(c, -1, -15, 3, 2, '#FFFFFF'); px(c, 0, -16, 1, '#E8F0FF'); },
+      back: c => { rect(c, -9, 1, 3, 2, '#FFFFFF'); px(c, -8, 0, 1, '#FFFFFF'); rect(c, 7, -1, 3, 2, '#FFFFFF'); px(c, 8, -2, 1, '#FFFFFF'); } },
+    as_fire_robe: { style: 1, robe: ['#FF6A4A', '#D8341E', '#9A1E10'], trim: '#FFB030', inner: '#FFE0B0', belt: '#6A1008',
+      front: c => { for (let x = -5; x <= 5; x++) { const h = [3, 5, 2, 4, 6, 3, 5, 2, 4, 3, 5][x + 5]; for (let y = 0; y < h; y++) px(c, x, 6 - y, 1, y > h - 2 ? '#FFE060' : y > h - 4 ? '#FFB030' : '#FF6A1A'); } },
+      head: c => { px(c, 0, -14, 1, '#FF6A1A'); px(c, -1, -15, 1, '#FFB030'); px(c, 0, -16, 1, '#FFE060'); px(c, 1, -15, 1, '#FF6A1A'); px(c, 1, -17, 1, '#FFE060'); } },
+    as_ice_silk: { style: 6, robe: ['#E6FBFF', '#A8E0F4', '#6AAED6'], trim: '#FFFFFF', inner: '#D8F4FF',
+      front: c => { px(c, 0, -2, 1, '#FFFFFF'); px(c, -1, -1, 1, '#FFFFFF'); px(c, 1, -1, 1, '#FFFFFF'); px(c, 0, 0, 1, '#FFFFFF'); },
+      head: c => { px(c, -2, -14, 1, '#E6FBFF'); px(c, 0, -14, 1, '#E6FBFF'); px(c, 2, -14, 1, '#E6FBFF'); px(c, 0, -15, 1, '#FFFFFF'); px(c, -2, -15, 1, '#A8E0F4'); px(c, 2, -15, 1, '#A8E0F4'); },
+      back: c => { for (const x of [-8, 8]) { px(c, x, -6, 1, '#E6FBFF'); px(c, x, -7, 1, '#FFFFFF'); px(c, x + (x < 0 ? 1 : -1), -5, 1, '#A8E0F4'); } } },
+    as_night: { style: 0, robe: ['#3A3A58', '#26263E', '#14142A'], trim: '#4A148C', inner: '#3A3A58', pants: '#1A1A2E',
+      head: c => {
+        rect(c, -5, -8, 11, 2, '#26263E'); rect(c, -4, -6, 9, 2, '#26263E');
+        rect(c, -4, -8, 9, 1, '#3E3E62'); px(c, 0, -7, 1, '#1A1A2E'); px(c, -2, -6, 1, '#1A1A2E'); px(c, 2, -6, 1, '#1A1A2E');
+        rect(c, -4, -13, 9, 1, '#26263E'); px(c, -5, -12, 1, '#26263E'); px(c, -6, -12, 1, '#3E3E62'); px(c, -7, -11, 1, '#3E3E62');
+      },
+      back: c => { for (let i = 0; i < 10; i++) px(c, 6 - i, -6 + i, 1, i < 2 ? '#8A7A5A' : '#C8D0E0'); } },
+    as_dragon_scale: { style: 6, robe: ['#5ED8B8', '#2E9A80', '#1A6654'], trim: '#DAA520', inner: '#44CCAA',
+      front: c => { for (let y = -3; y <= 2; y += 2) for (let x = -3 + (y & 1); x <= 3; x += 2) px(c, x, y, 1, '#8AF0D0'); },
+      head: c => { px(c, -3, -14, 1, '#FFD700'); px(c, -4, -15, 1, '#FFD700'); px(c, -3, -16, 1, '#FFE680'); px(c, 3, -14, 1, '#FFD700'); px(c, 4, -15, 1, '#FFD700'); px(c, 3, -16, 1, '#FFE680'); } },
+    as_flower: { style: 4, robe: ['#FFA8D0', '#E070A8', '#B04880'], trim: '#FFE0F0', inner: '#FFF0F8',
+      front: c => { for (const [x, y] of [[-2, -2], [2, 1], [-3, 3], [1, 4], [3, -1]]) { px(c, x, y, 1, '#FFFFFF'); px(c, x + 1, y, 1, '#FFD24A'); } },
+      head: c => { for (const [x, col] of [[-3, '#FF88CC'], [-1, '#FFD24A'], [1, '#FFFFFF'], [3, '#FF88CC']]) px(c, x, -14, 1, col); px(c, -2, -14, 1, '#6DAA3E'); px(c, 0, -14, 1, '#6DAA3E'); px(c, 2, -14, 1, '#6DAA3E'); },
+      back: c => { px(c, -8, -3, 1, '#FFB0D0'); px(c, 8, 0, 1, '#FFB0D0'); px(c, -9, 2, 1, '#FFE0F0'); } },
+    as_star_robe: { style: 3, robe: ['#3A4AA0', '#232E78', '#141A4A'], trim: '#FFE680', inner: '#0A0F3A',
+      front: c => { for (const [x, y] of [[-3, -1], [2, -2], [0, 2], [-2, 4], [3, 3]]) px(c, x, y, 1, '#FFF6B0'); },
+      head: c => { rect(c, -1, -14, 3, 1, '#FFE680'); px(c, 1, -15, 1, '#FFE680'); px(c, 2, -16, 1, '#FFE680'); px(c, 1, -16, 1, '#FFF6C0'); },
+      back: c => { for (let x = -9; x <= 9; x++) { const y = -2 + Math.round(Math.abs(x) * 0.3); px(c, x, y, 1, '#141A4A'); } for (const x of [-8, -5, 6, 9]) px(c, x, -1, 1, '#FFF6B0'); } },
+    as_blood_armor: { style: 6, robe: ['#C83030', '#8B0000', '#5A0000'], trim: '#3A0A0A', inner: '#CC2222',
+      front: c => { px(c, -1, -2, 1, '#E8E0D0'); px(c, 1, -2, 1, '#E8E0D0'); px(c, 0, -1, 1, '#E8E0D0'); px(c, 0, 0, 1, '#E8E0D0'); },
+      head: c => { rect(c, -4, -14, 9, 1, '#5A0000'); px(c, 0, -15, 1, '#FF3030'); px(c, -1, -16, 1, '#FF3030'); px(c, -2, -17, 1, '#CC1010'); px(c, -3, -17, 1, '#CC1010'); } },
+    as_jade_emperor: { style: 5, robe: ['#FFE680', '#FFC83A', '#C8901E'], trim: '#60E0A0', inner: '#FFF6D0', gem: '#60E0A0',
+      front: c => { rect(c, -1, -2, 3, 3, '#60E0A0'); px(c, 0, -1, 1, '#FFFFFF'); },
+      head: c => { rect(c, -4, -15, 9, 1, '#2A2A3A'); rect(c, -1, -14, 3, 1, '#FFC83A'); for (const x of [-4, -3, 3, 4]) { px(c, x, -14, 1, '#60E0A0'); px(c, x, -13, 1, '#FFE680'); } } },
+    as_ghost: { style: 1, robe: ['#C8FFE0', '#88E0B0', '#58B088'], trim: '#E8FFF0', inner: '#F0FFF8', ghost: true,
+      front: c => { for (let x = -5; x <= 5; x += 2) c.clearRect(x, 6, 1, 1); c.clearRect(-4, 5, 1, 1); c.clearRect(2, 5, 1, 1); },
+      head: c => { px(c, -1, -13, 1, '#FFFFFF'); px(c, 0, -13, 1, '#FFFFFF'); px(c, 1, -13, 1, '#FFFFFF'); px(c, 0, -12, 1, '#FFFFFF'); px(c, 0, -14, 1, '#E8E8E8'); },
+      back: c => { for (const [x, y] of [[-8, -4], [8, -6], [-9, 2]]) { px(c, x, y, 1, '#88FFCC'); px(c, x, y - 1, 1, '#C8FFE8'); } } },
+    as_thunder_armor: { style: 6, robe: ['#FFE680', '#DAA520', '#9A7010'], trim: '#4A5568', inner: '#FFEB3B',
+      front: c => { px(c, 0, -3, 1, '#FFFFF0'); px(c, -1, -2, 1, '#FFFFF0'); px(c, 0, -1, 1, '#FFFFF0'); px(c, -1, 0, 1, '#FFFFF0'); },
+      head: c => { rect(c, -4, -14, 9, 1, '#4A5568'); px(c, -4, -15, 1, '#FFEB3B'); px(c, -5, -16, 1, '#FFEB3B'); px(c, 4, -15, 1, '#FFEB3B'); px(c, 5, -16, 1, '#FFEB3B'); },
+      back: c => { for (let a = 0; a < 8; a++) { const t = a / 8 * Math.PI * 2; const x = Math.round(Math.cos(t) * 10), y = Math.round(-6 + Math.sin(t) * 8); rect(c, x - 1, y - 1, 2, 2, '#B83A2A'); px(c, x - 1, y - 1, 1, '#FFD24A'); } } },
+    as_phoenix_robe: { style: 5, robe: ['#FF7A4A', '#E0401E', '#A02410'], trim: '#FFD700', inner: '#FFE0A0', gem: '#FFD700',
+      head: c => { px(c, 0, -14, 1, '#FFD700'); px(c, -1, -15, 1, '#FF6A1A'); px(c, 1, -15, 1, '#FF6A1A'); px(c, 0, -16, 1, '#FFD700'); px(c, 0, -17, 1, '#FFF6A0'); },
+      back: c => { for (let i = 0; i < 5; i++) { const t = -0.9 - i * 0.35; for (let r = 4; r < 12; r++) px(c, Math.round(-3 + Math.cos(t) * r), Math.round(1 + Math.sin(t) * r * 0.9), 1, r > 9 ? '#FFD700' : r > 6 ? '#FF8A1A' : '#E0401E'); } } },
+    as_void_cloak: { style: 1, robe: ['#3A2A5A', '#1A1030', '#0A0518'], trim: '#7C4DFF', inner: '#2A1A4A', belt: '#4A148C',
+      front: c => { px(c, 0, 1, 1, '#B388FF'); px(c, -1, 1, 1, '#7C4DFF'); px(c, 1, 1, 1, '#7C4DFF'); px(c, 0, 2, 1, '#1A0033'); },
+      back: c => { for (let y = -5; y <= 7; y++) { const half = 7 + Math.round((y + 5) * 0.2); rect(c, -half, y, half * 2 + 1, 1, y > 5 ? '#050510' : '#0A0A1A'); } rect(c, -7, -5, 15, 1, '#4A148C'); } },
+    as_celestial: { style: 6, robe: ['#FFF6C0', '#FFD86A', '#C8A030'], trim: '#FFFFFF', inner: '#FFF6C0',
+      head: c => { rect(c, -4, -14, 9, 1, '#FFD86A'); px(c, -5, -15, 1, '#FFFFFF'); px(c, -6, -16, 1, '#FFFFFF'); px(c, 5, -15, 1, '#FFFFFF'); px(c, 6, -16, 1, '#FFFFFF'); px(c, 0, -15, 1, '#FF5A6A'); },
+      back: c => { for (const sgn of [-1, 1]) for (let i = 0; i < 6; i++) { rect(c, sgn > 0 ? 6 + i : -7 - i, -6 + i, 1, 6 - i, i % 2 ? '#FFFFFF' : '#F0F0F8'); } } },
+    as_primordial_robe: { style: 5, robe: ['#5A5A6A', '#2A2A36', '#14141C'], trim: '#F4F4F4', inner: '#F4F4F4', gem: '#FFFFFF',
+      front: c => { px(c, -1, 1, 1, '#FFFFFF'); px(c, 0, 1, 1, '#FFFFFF'); px(c, -1, 2, 1, '#FFFFFF'); px(c, 1, 2, 1, '#111111'); px(c, 0, 3, 1, '#111111'); px(c, 1, 3, 1, '#111111'); px(c, 0, 2, 1, '#888888'); },
+      head: c => { rect(c, -1, -15, 3, 2, '#14141C'); px(c, 0, -16, 1, '#F4F4F4'); },
+      back: c => { for (let y = -9; y <= 9; y++) for (let x = -9; x <= 9; x++) { const d = x * x + y * y; if (d > 81 || d < 64) continue; px(c, x, y - 7, 1, x < 0 ? '#F4F4F4' : '#2A2A36'); } } },
+    as_universe: { style: 4, robe: ['#3A6AD8', '#1A3A9A', '#0A1A5A'], trim: '#00E5FF', inner: '#0A1A5A',
+      front: c => { for (const [x, y] of [[-3, -2], [2, -1], [-1, 1], [3, 3], [-3, 4], [1, 5]]) px(c, x, y, 1, (x + y) & 1 ? '#FFFFFF' : '#00E5FF'); },
+      head: c => { for (const [x, y] of [[-2, -14], [0, -15], [2, -14]]) { px(c, x, y, 1, '#00E5FF'); px(c, x, y - 1, 1, '#FFFFFF'); } rect(c, -2, -14, 5, 1, '#1A3A9A'); },
+      back: c => { for (let a = 0; a < 40; a++) { const t = a / 40 * Math.PI * 2; px(c, Math.round(Math.cos(t) * 11), Math.round(-4 + Math.sin(t) * 4), 1, '#00E5FF'); } rect(c, -12, -6, 3, 3, '#FF8A5A'); rect(c, 10, -3, 2, 2, '#8AE0FF'); } },
   };
 
+  function buildHero(realm, skinId, tailUp, blink, pose) {
+    const cv = document.createElement('canvas');
+    cv.width = HERO_W; cv.height = HERO_H;
+    const c = cv.getContext('2d');
+    c.translate(HERO_OX, HERO_OY);
+    const O = heroOutfit(realm, skinId);
+    const f2 = tailUp ? 1 : 0;
+    drawHeroBack(c, realm, O, f2);
+    drawMouseTail(c, 1, tailUp ? 26 : 0, C.TAIL);
+    drawHeroBody(c, realm, O, pose, f2);
+    drawMouseBody(c, 1, C.FUR_GREY, C.FUR_LIGHT, C.FUR_BELLY, C.EAR_PINK, C.EAR_INNER);
+    if (blink) {
+      rect(c, -3, -10, 2, 2, C.FUR_GREY); rect(c, 2, -10, 2, 2, C.FUR_GREY);
+      rect(c, -3, -9, 2, 1, '#0A0A22'); rect(c, 2, -9, 2, 1, '#0A0A22');
+    }
+    if (O.skin && O.def.front) O.def.front(c);
+    drawHeroHeadwear(c, realm, O);
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    outlineSprite(c, HERO_W, HERO_H, { keepEars: true });
+    return cv;
+  }
+
+  // 柔和描边 + 明暗：胡须不描、耳朵保持原版、描边颜色跟随相邻像素
+  function outlineSprite(c, W, H, opts) {
+    const img = c.getImageData(0, 0, W, H), d = img.data, out = new Uint8ClampedArray(d);
+    const hex = h => { h = h.replace('#', ''); return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; };
+    const same = (j, rgb) => d[j] === rgb[0] && d[j + 1] === rgb[1] && d[j + 2] === rgb[2];
+    const WH = hex(C.WHISKER);
+    const EARS = opts && opts.keepEars ? [C.EAR_PINK, C.EAR_INNER, '#F0C0D8'].map(hex) : [];
+    const isEar = j => EARS.some(e => same(j, e));
+    const solid = new Uint8Array(W * H);
+    for (let i = 0; i < W * H; i++) solid[i] = d[i * 4 + 3] >= 200 && !same(i * 4, WH) ? 1 : 0;
+    const at = (x, y) => x >= 0 && y >= 0 && x < W && y < H && solid[y * W + x];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (d[i * 4 + 3] >= 200) {
+        if (!solid[i] || isEar(i * 4)) continue;
+        let k = 1;
+        if (!at(x, y - 1)) k = 1.2; else if (!at(x, y + 1) || !at(x + 1, y)) k = 0.8;
+        if (k !== 1) for (let ch = 0; ch < 3; ch++) out[i * 4 + ch] = Math.min(255, d[i * 4 + ch] * k);
+        continue;
+      }
+      const nb = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]].filter(([a, b]) => at(a, b));
+      if (!nb.length || nb.some(([a, b]) => isEar((b * W + a) * 4))) continue;
+      let r = 0, g = 0, bl = 0;
+      for (const [a, b] of nb) { const j = (b * W + a) * 4; r += d[j]; g += d[j + 1]; bl += d[j + 2]; }
+      const n = nb.length;
+      out[i * 4] = Math.round(r / n * 0.42 + HERO_OUTLINE[0] * 0.35);
+      out[i * 4 + 1] = Math.round(g / n * 0.42 + HERO_OUTLINE[1] * 0.35);
+      out[i * 4 + 2] = Math.round(bl / n * 0.42 + HERO_OUTLINE[2] * 0.35);
+      out[i * 4 + 3] = 255;
+    }
+    c.putImageData(new ImageData(out, W, H), 0, 0);
+  }
+
+  function getHero(realm, skinId, tailUp, blink, pose) {
+    const key = `${realm}|${skinId || ''}|${tailUp ? 1 : 0}|${blink ? 1 : 0}|${pose || ''}`;
+    let cv = heroCache.get(key);
+    if (!cv) { cv = buildHero(realm, skinId, tailUp, blink, pose); heroCache.set(key, cv); }
+    return cv;
+  }
+
+  // 境界浮空高度（与 v1 一致）
+  function heroFloat(realm, frame, s) {
+    if (realm <= 1) return Math.sin(frame * 0.08) * 1.5 * s;
+    if (realm === 2) return Math.sin(frame * 0.04) * 2 * s;
+    if (realm === 3) return Math.sin(frame * 0.04) * 3 * s - 3 * s;
+    if (realm === 4) return Math.sin(frame * 0.03) * 4 * s - 6 * s;
+    return Math.sin(frame * 0.03) * 5 * s - 9 * s;
+  }
+
   // ================================================================
-  // 盔甲皮肤颜色 + 覆盖层
+  // 武器 v3.2 — 像素武器（竖直绘制、握把为原点、自动描边、缓存后旋转）
   // ================================================================
+  // 通用形制：sword 剑 / staff 杖 / dao 刀 / dagger 匕 / hammer 锤 / great 巨剑
+  function forgeWeapon(c, w) {
+    const [bl, bm, bd] = w.blade;
+    const len = w.len;
+    const hilt = w.hilt || '#4A3A30', guard = w.guard || '#8A7A5A';
+    if (w.type === 'staff') {
+      for (let y = -len; y <= 3; y++) { px(c, 0, y, 1, bm); px(c, -1, y, 1, bl); }
+      if (w.nodes) for (let y = -len + 2; y < 2; y += 3) { px(c, -1, y, 1, bd); px(c, 0, y, 1, bd); }
+      return;
+    }
+    if (w.type === 'hammer') {
+      for (let y = -len + 3; y <= 3; y++) { px(c, 0, y, 1, hilt); px(c, -1, y, 1, shadeHex(hilt, 1.3)); }
+      rect(c, -3, -len, 6, 4, bm); rect(c, -3, -len, 6, 1, bl); rect(c, -3, -len + 3, 6, 1, bd);
+      return;
+    }
+    // 握柄 + 护手
+    rect(c, -1, 1, 2, 3, hilt); px(c, -1, 1, 1, shadeHex(hilt, 1.3)); px(c, -1, 4, 1, guard); px(c, 0, 4, 1, guard);
+    const gw = w.type === 'dagger' ? 1 : 2;
+    rect(c, -gw - 1, 0, gw * 2 + 2, 1, guard); px(c, -gw - 1, 0, 1, shadeHex(guard, 1.3));
+    if (w.type === 'dao') { // 单刃刀：刀背直、刀刃外弧
+      for (let y = -len; y < 0; y++) {
+        const extra = y < -len + 3 ? 0 : 1;
+        px(c, -1, y, 1, bd); px(c, 0, y, 1, bm); if (extra) px(c, 1, y, 1, bl);
+      }
+      px(c, 0, -len - 1, 1, bl);
+      return;
+    }
+    const half = w.type === 'great' ? 1 : 0;
+    // 护手两端下垂，更有形
+    if (w.type !== 'dagger') { px(c, -gw - 2, 1, 1, guard); px(c, gw + 1, 1, 1, shadeHex(guard, 0.8)); }
+    px(c, 0, 1, 1, w.gem || shadeHex(guard, 0.7));
+    for (let y = -len; y < 0; y++) {
+      px(c, -1 - half, y, 1, bl); px(c, 0, y, 1, bm);
+      if (half) { px(c, -1, y, 1, bl); px(c, 1, y, 1, bd); } else px(c, 0, y, 1, bm);
+      if (w.type !== 'dagger' && !half) px(c, 1, y, 1, bd);
+    }
+    px(c, 0, -len - 1, 1, bl);
+    if (half) { px(c, -1, -len - 1, 1, bm); px(c, 1, -len - 1, 1, bd); }
+  }
+
+  const WEAPON_DEFS = {
+    // 境界默认武器
+    realm0: { name: '竹杖', type: 'staff', len: 12, blade: ['#A8D86A', '#6DAA3E', '#3E6E26'], nodes: true, deco: c => { px(c, -2, -12, 1, '#8BD150'); px(c, -3, -13, 1, '#A8E070'); px(c, 1, -10, 1, '#8BD150'); } },
+    realm1: { name: '青钢剑', type: 'sword', len: 8, blade: ['#E0E8F4', '#AEBCD0', '#76849C'], hilt: '#3C4A6A', guard: '#8C9CB8' },
+    realm2: { name: '青竹蜂云剑', type: 'sword', len: 9, blade: ['#E0FFF6', '#8FE0C8', '#4AA890'], hilt: '#1C6E68', guard: '#7FF0D0', glow: '#7FF0D0' },
+    realm3: { name: '八灵飞剑', type: 'sword', len: 9, blade: ['#EEF4FF', '#A8C4F4', '#6A86C8'], hilt: '#2A4284', guard: '#E8EEF8', glow: '#9FC8FF', deco: c => { px(c, 0, -4, 1, '#9FC8FF'); px(c, 0, -8, 1, '#9FC8FF'); } },
+    realm4: { name: '玄天斩灵剑', type: 'great', len: 10, blade: ['#F4E8FF', '#C8A4F4', '#8A5ACC'], hilt: '#4A2A7A', guard: '#FF9AD0', glow: '#E0C8FF', deco: c => { px(c, 0, -3, 1, '#FF9AD0'); } },
+    realm5: { name: '乾坤化灵剑', type: 'great', len: 11, blade: ['#FFF6C0', '#FFD86A', '#C8901E'], hilt: '#7C123E', guard: '#FFC83A', glow: '#FFE680', deco: c => { px(c, 0, -2, 1, '#FF5A6A'); px(c, 0, -7, 1, '#FFFFFF'); } },
+    // 天机阁武器外观
+    ws_bamboo: { type: 'sword', len: 9, blade: ['#A8E070', '#6DAA3E', '#3E6E26'], hilt: '#2E5E1E', guard: '#4A8B2A', deco: c => { for (let y = -8; y < 0; y += 3) { px(c, -1, y, 1, '#2E5E1E'); px(c, 1, y, 1, '#2E5E1E'); } } },
+    ws_rusty: { type: 'sword', len: 8, blade: ['#C0A070', '#8B6914', '#5D4A1A'], hilt: '#5D4037', guard: '#8B7355', deco: c => { px(c, 1, -6, 1, '#CC6600'); px(c, -1, -3, 1, '#996633'); px(c, 0, -8, 1, '#AA5500'); } },
+    ws_bone: { type: 'dao', len: 9, blade: ['#FFFFFF', '#E8DCC8', '#B8A888'], hilt: '#8B7355', guard: '#DDD', deco: c => { px(c, 2, -7, 1, '#E8DCC8'); px(c, 2, -3, 1, '#E8DCC8'); } },
+    ws_jade: { type: 'sword', len: 9, blade: ['#C8F0C8', '#66BB6A', '#2E7D32'], hilt: '#1B5E20', guard: '#A5D6A7', glow: '#A5D6A7' },
+    ws_flame: { type: 'dao', len: 10, blade: ['#FFE080', '#FF8F00', '#C43E00'], hilt: '#5D4037', guard: '#FF6F00', glow: '#FFB030', fx: 'flame' },
+    ws_frost: { type: 'sword', len: 10, blade: ['#FFFFFF', '#AEE4F8', '#5DADE2'], hilt: '#1A5276', guard: '#D6EAF8', glow: '#D6F4FF', fx: 'frost', deco: c => { px(c, -2, -9, 1, '#FFFFFF'); px(c, 2, -9, 1, '#FFFFFF'); } },
+    ws_wind: { type: 'dagger', len: 6, blade: ['#F0FFF8', '#B8F0D8', '#6AC8A0'], hilt: '#2E6E5A', guard: '#8AE0C0', fx: 'wind' },
+    ws_thunder: { type: 'hammer', len: 11, blade: ['#FFF6A0', '#ECC94B', '#A8861E'], hilt: '#4A5568', fx: 'thunder', deco: c => { px(c, -1, -10, 1, '#FFFFFF'); px(c, 0, -9, 1, '#FFFFFF'); } },
+    ws_blood: { type: 'dao', len: 10, blade: ['#FF6A6A', '#CC0000', '#6A0000'], hilt: '#2A0000', guard: '#800000', glow: '#FF4040', fx: 'blood' },
+    ws_shadow: { type: 'dagger', len: 7, blade: ['#7C4DFF', '#311B92', '#1A0A4A'], hilt: '#1A1A2E', guard: '#4A148C', glow: '#7C4DFF' },
+    ws_starfall: { type: 'sword', len: 11, blade: ['#E8EEFF', '#5C6BC0', '#283593'], hilt: '#1A237E', guard: '#C5CAE9', fx: 'stars', deco: c => { for (const y of [-9, -6, -3]) px(c, 0, y, 1, '#FFF6B0'); } },
+    ws_dragon: { type: 'great', len: 11, blade: ['#A8E0B0', '#2E7D32', '#1B4E20'], hilt: '#1B5E20', guard: '#DAA520', glow: '#FFD700', deco: c => { for (let y = -10; y < -1; y += 3) { px(c, -1, y, 1, '#FFD700'); px(c, 1, y + 1, 1, '#FFD700'); } px(c, -4, -1, 1, '#FFD700'); px(c, 3, -1, 1, '#FFD700'); } },
+    ws_phoenix: { type: 'dao', len: 11, blade: ['#FFE680', '#FF8F00', '#BF360C'], hilt: '#BF360C', guard: '#FFD600', glow: '#FFB030', fx: 'flame', deco: c => { px(c, 2, -6, 1, '#FF6F00'); px(c, 2, -9, 1, '#FFD600'); } },
+    ws_void: { type: 'great', len: 12, blade: ['#4A2A7A', '#1A0033', '#0A0014'], hilt: '#0D0D0D', guard: '#4A148C', glow: '#7C4DFF', fx: 'void', deco: c => { px(c, 0, -5, 1, '#B388FF'); px(c, 0, -9, 1, '#B388FF'); } },
+    ws_moonlight: { type: 'sword', len: 11, blade: ['#FFFFFF', '#E0E8F4', '#A0B0C8'], hilt: '#2C3E50', guard: '#BDC3C7', glow: '#F0F3F4', deco: c => { px(c, -2, -11, 1, '#FFFFFF'); px(c, -3, -10, 1, '#E0E8F4'); } },
+    ws_golden_lotus: { type: 'staff', len: 13, blade: ['#FFE680', '#DAA520', '#8A6A10'], glow: '#FFE680', deco: c => { rect(c, -3, -15, 5, 2, '#FFB0D0'); px(c, -1, -16, 1, '#FFE0F0'); px(c, -4, -14, 1, '#FF88CC'); px(c, 2, -14, 1, '#FF88CC'); px(c, -1, -14, 1, '#FFD24A'); } },
+    ws_chaos: { type: 'great', len: 12, blade: ['#C8A0E8', '#6A4A8A', '#2A1A3A'], hilt: '#1A0A1A', guard: '#FF5AA0', glow: '#FF5AA0', fx: 'void', deco: c => { px(c, 1, -4, 1, '#FF5AA0'); px(c, -1, -8, 1, '#5AE0FF'); px(c, 1, -11, 1, '#FF5AA0'); } },
+    ws_heavenly: { type: 'sword', len: 12, blade: ['#FFFDE0', '#FFC107', '#B8860B'], hilt: '#0D47A1', guard: '#FFD700', glow: '#FFF6A0', fx: 'thunder' },
+    ws_primordial: { type: 'great', len: 14, blade: ['#FFFFE0', '#FFD700', '#B8860B'], hilt: '#880000', guard: '#FFD700', glow: '#FFFFAA', fx: 'stars', deco: c => { px(c, 0, -3, 1, '#FF3040'); px(c, 0, -8, 1, '#FFFFFF'); px(c, 0, -12, 1, '#FFFFFF'); } },
+    ws_cosmic: { type: 'great', len: 14, blade: ['#3A5ABF', '#1A237E', '#0A0F3A'], hilt: '#0D0D2B', guard: '#00BCD4', glow: '#00E5FF', fx: 'stars', deco: c => { for (const [x, y] of [[-1, -12], [1, -9], [0, -6], [-1, -3], [1, -2]]) px(c, x, y, 1, x & 1 ? '#FFFFFF' : '#00E5FF'); } },
+  };
+  const WEAPON_OX = 8, WEAPON_OY = 18, WEAPON_W = 16, WEAPON_H = 24;
+  const weaponCache = new Map();
+
+  function getWeaponSprite(key) {
+    if (weaponCache.has(key)) return weaponCache.get(key);
+    const w = WEAPON_DEFS[key];
+    if (!w) return null;
+    const cv = document.createElement('canvas'); cv.width = WEAPON_W; cv.height = WEAPON_H;
+    const c = cv.getContext('2d');
+    c.translate(WEAPON_OX, WEAPON_OY);
+    forgeWeapon(c, w);
+    if (w.deco) w.deco(c);
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    outlineSprite(c, WEAPON_W, WEAPON_H, {});
+    weaponCache.set(key, cv);
+    return cv;
+  }
+
+  // 动态特效：火焰 / 冰霜 / 风 / 雷 / 血 / 星 / 虚空
+  function weaponFx(ctx, w, s, frame) {
+    const len = w.len;
+    const t = frame;
+    if (w.glow) { ctx.globalAlpha = 0.18 + Math.sin(t * 0.06) * 0.1; rect(ctx, -2 * s, -(len + 1) * s, 4 * s, (len + 1) * s, w.glow); ctx.globalAlpha = 1; }
+    const fx = w.fx;
+    if (!fx) return;
+    for (let i = 0; i < 3; i++) {
+      const ph = (t * 0.05 + i * 0.33) % 1;
+      const y = -ph * (len + 2) * s;
+      ctx.globalAlpha = 1 - ph;
+      if (fx === 'flame') px(ctx, Math.round(Math.sin(t * 0.2 + i) * 2) * s, y - 2 * s, s, i % 2 ? '#FFD600' : '#FF6F00');
+      else if (fx === 'frost') px(ctx, (i - 1) * 2 * s, y, s, '#E6FBFF');
+      else if (fx === 'wind') px(ctx, (2 + i) * s, y, s, '#B8F0D8');
+      else if (fx === 'thunder') { if ((t + i * 7) % 20 < 3) px(ctx, (i - 1) * 2 * s, -(len - i * 3) * s, s, '#FFFFF0'); }
+      else if (fx === 'blood') px(ctx, s, (ph * 4 - 2) * s, s, '#FF2020');
+      else if (fx === 'stars') { if (Math.sin(t * 0.1 + i * 2) > 0.3) px(ctx, (i - 1) * 2 * s, -(3 + i * 4) * s, s, '#FFFFFF'); }
+      else if (fx === 'void') px(ctx, Math.round(Math.cos(t * 0.05 + i * 2) * 3) * s, -(4 + i * 3) * s, s, '#B388FF');
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawWeaponSprite(ctx, key, x, y, s, frame, angle) {
+    const img = getWeaponSprite(key);
+    if (!img) return false;
+    const w = WEAPON_DEFS[key];
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    ctx.imageSmoothingEnabled = false;
+    weaponFx(ctx, w, s, frame);
+    ctx.drawImage(img, -WEAPON_OX * s, -WEAPON_OY * s, WEAPON_W * s, WEAPON_H * s);
+    ctx.restore();
+    return true;
+  }
+
+  function weaponAngle(attacking) { return attacking > 0 ? -0.8 + Math.sin(attacking * 0.5) * 1.5 : 0; }
+
+  function drawWeapon(ctx, x, y, s, tier, frame, attacking) {
+    drawWeaponSprite(ctx, 'realm' + Math.max(0, Math.min(5, tier)), x, y, s, frame, weaponAngle(attacking));
+  }
+
   const armorSkinColors = {
     'as_patched':{ main:'#8B8B6B',accent:'#6B6B4B',trim:'#A0A080' },
     'as_farmer':{ main:'#A09060',accent:'#807040',trim:'#C0B080' },
@@ -666,31 +676,9 @@ const Sprites = (() => {
     'as_universe':{ main:'#0D47A1',accent:'#1A237E',trim:'#00BCD4' },
   };
 
-  function drawArmorSkinOverlay(ctx, x, y, s, realmIndex, frame, attacking, skinId) {
-    const colors = armorSkinColors[skinId]; if (!colors) return;
-    const bounce = realmIndex<=1 ? Math.sin(frame*0.08)*1.5*s : (realmIndex<=3 ? Math.sin(frame*0.04)*2*s : Math.sin(frame*0.03)*(3+realmIndex)*s);
-    const atkX = attacking>0 ? Math.sin(attacking*0.4)*(6+realmIndex*2)*s : 0;
-    const floatExtra = realmIndex>=3 ? -(realmIndex-2)*3*s : 0;
-    ctx.save(); ctx.translate(x+atkX, y+bounce+floatExtra); ctx.globalAlpha=0.75;
-    // v4.0适配：缩小衣服覆盖层
-    const bw = realmIndex>=4 ? 7 : (realmIndex>=2 ? 6 : (realmIndex>=1 ? 5 : 4));
-    const bh = realmIndex>=4 ? 6 : (realmIndex>=2 ? 5 : (realmIndex>=1 ? 4 : 4));
-    rect(ctx,-bw*s,-(bh-1)*s,bw*2*s,bh*2*s,colors.main);
-    rect(ctx,-(bw-1)*s,-(bh-2)*s,(bw-1)*2*s,(bh-1)*2*s,colors.accent);
-    px(ctx,-s,-(bh)*s,s,colors.trim); px(ctx,0,-(bh-1)*s,s,colors.trim); px(ctx,s,-(bh)*s,s,colors.trim);
-    rect(ctx,-bw*s,0,bw*2*s,s,colors.trim);
-    if(skinId.includes('phoenix')||skinId.includes('celestial')||skinId.includes('primordial')||skinId.includes('universe')){
-      ctx.globalAlpha=0.25+Math.sin(frame*0.04)*0.15; rect(ctx,-bw*s,-(bh-1)*s,bw*2*s,bh*2*s,colors.trim);
-    }
-    ctx.globalAlpha=1; ctx.restore();
-  }
-
   function drawWeaponWithSkin(ctx, x, y, s, tier, frame, attacking, skinId) {
-    if(skinId && weaponSkinDrawers[skinId]){
-      ctx.save(); ctx.translate(x,y);
-      const angle = attacking>0 ? -0.8+Math.sin(attacking*0.5)*1.5 : -0.3;
-      ctx.rotate(angle); weaponSkinDrawers[skinId](ctx,s,frame); ctx.restore();
-    } else { drawWeapon(ctx,x,y,s,tier,frame,attacking); }
+    const key = skinId && WEAPON_DEFS[skinId] ? skinId : 'realm' + Math.max(0, Math.min(5, tier));
+    drawWeaponSprite(ctx, key, x, y, s, frame, weaponAngle(attacking));
   }
 
   // ================================================================
@@ -698,23 +686,39 @@ const Sprites = (() => {
   // ================================================================
   function drawMouseByRealm(ctx, x, y, s, realmIndex, frame, attacking, options) {
     const opts = options || {};
-    const drawFns = [drawMouseRealm0,drawMouseRealm1,drawMouseRealm2,drawMouseRealm3,drawMouseRealm4,drawMouseRealm5];
-    // 境界光环（用circle绘制柔和的椭圆光晕，不是方块）
-    if(realmIndex >= 1){
-      const glowColors = [null,'rgba(68,136,204,0.08)','rgba(46,139,139,0.10)','rgba(65,105,180,0.12)','rgba(123,62,191,0.15)','rgba(160,32,96,0.18)'];
-      const glowR = (12+realmIndex*4)*s;
-      const pulse = 1+Math.sin(frame*0.03)*0.1;
-      ctx.save(); ctx.globalAlpha=0.4;
-      const r = glowR*pulse;
-      ellipse(ctx, x, y-2*s, r, r*0.7, glowColors[realmIndex]||'transparent');
-      ctx.globalAlpha=1; ctx.restore();
+    const realm = Math.max(0, Math.min(5, realmIndex || 0));
+    // 境界光环
+    if (realm >= 1) {
+      const glowColors = [null, 'rgba(68,136,204,0.08)', 'rgba(46,139,139,0.10)', 'rgba(65,105,180,0.12)', 'rgba(123,62,191,0.15)', 'rgba(160,32,96,0.18)'];
+      const r = (12 + realm * 4) * s * (1 + Math.sin(frame * 0.03) * 0.1);
+      ctx.save(); ctx.globalAlpha = 0.4;
+      ellipse(ctx, x, y - 2 * s, r, r * 0.7, glowColors[realm]);
+      ctx.restore();
     }
-    const fn = drawFns[realmIndex] || drawFns[0];
-    fn(ctx, x, y, s, frame, attacking, opts);
+    const bob = opts.riding ? 0 : heroFloat(realm, frame, s); // 骑乘时由坐骑带动起伏
+    const atkX = attacking ? Math.sin(attacking * 0.4) * (6 + realm * 2) * s : 0;
+    const hero = getHero(realm, opts.equippedArmorSkin, Math.sin(frame * 0.06) > 0, (frame % 230) > 222, attacking > 3 ? 'attack' : '');
+    const dx = x + atkX, dy = y + bob;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(hero, Math.round(dx - HERO_OX * s), Math.round(dy - HERO_OY * s), HERO_W * s, HERO_H * s);
+    ctx.restore();
+    // 高境界：环绕的灵光
+    if (realm >= 2) {
+      const col = ['', '', '#7FF0D0', '#9FC8FF', '#E0C8FF', '#FFD86A'][realm];
+      ctx.save(); ctx.globalAlpha = 0.55;
+      for (let i = 0; i < realm; i++) {
+        const a = frame * 0.02 + i * (Math.PI * 2 / realm);
+        px(ctx, dx + Math.cos(a) * 11 * s, dy - 3 * s + Math.sin(a) * 6 * s, s, col);
+      }
+      ctx.restore();
+    }
+    // 右手持剑
+    drawWeaponWithSkin(ctx, dx + 7 * s, dy + 2 * s, s, realm, frame, attacking, opts.equippedWeaponSkin);
   }
 
   return {
-    drawMouseByRealm, drawWeaponWithSkin, drawArmorSkinOverlay,
+    drawMouseByRealm, drawWeaponWithSkin, getWeaponSprite, HERO_OUTFITS, WEAPON_DEFS,
     armorSkinColors, rect, px, circle, ellipse, roundRect,
   };
 })();

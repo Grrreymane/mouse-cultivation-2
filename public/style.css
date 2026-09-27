@@ -267,7 +267,7 @@ b { font-weight: 700; }
 
 /* 角色页 */
 .hero { display: flex; gap: 12px; align-items: center; padding: 12px; background: linear-gradient(135deg, #251e34, #1a1624); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 12px; }
-.hero canvas { width: 84px; height: 96px; image-rendering: pixelated; background: radial-gradient(circle at 50% 70%, #3a3150, #1a1624 70%); border-radius: 8px; border: 1px solid var(--line-2); flex-shrink: 0; }
+.hero canvas { width: 86px; height: 96px; image-rendering: pixelated; background: radial-gradient(circle at 50% 70%, #3a3150, #1a1624 70%); border-radius: 8px; border: 1px solid var(--line-2); flex-shrink: 0; }
 .hero-name { font-size: 16px; font-weight: 900; }
 .hero-power { font-size: 12px; color: var(--dim); margin-top: 4px; }
 .hero-power b { font-size: 20px; color: var(--gold-2); font-variant-numeric: tabular-nums; }

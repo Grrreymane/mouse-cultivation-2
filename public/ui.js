@@ -305,7 +305,7 @@ const UI = (() => {
       const mountTxt = s.visualEquip.mount ? `${s.visualEquip.mount}（${s.visualEquip.mountStats}）` : '金丹期获得坐骑';
       return `
       <div class="hero">
-        <canvas id="heroCanvas" width="30" height="34"></canvas>
+        <canvas id="heroCanvas" width="34" height="38"></canvas>
         <div class="grow">
           <div class="hero-name">鼠鼠 <span class="realm-chip" style="color:${s.realmColor};font-size:11px">${s.realm}</span></div>
           <div class="muted">Lv.${s.level} · ${s.realmScene}${s.ascensionCount ? ` · 第${s.ascensionCount + 1}世` : ''}</div>
@@ -666,11 +666,9 @@ const UI = (() => {
       const c = cv.getContext('2d');
       c.clearRect(0, 0, cv.width, cv.height); c.imageSmoothingEnabled = false;
       if (type === 'weapon') {
-        c.save(); c.translate(12, 18); c.rotate(-0.6);
-        Sprites.drawWeaponWithSkin(c, 0, 0, 1, Math.min(5, s.realmIndex), 0, 0, id);
-        c.restore();
+        Sprites.drawWeaponWithSkin(c, 12, 19, 1, Math.min(5, s.realmIndex), 0, 0, id);
       } else {
-        cv.width = 24; cv.height = 28;
+        cv.width = 32; cv.height = 34;
         drawMouseTo(cv, { ...s, realmIndex: Math.min(1, s.realmIndex) }, { armor: id, weapon: null });
       }
     });
