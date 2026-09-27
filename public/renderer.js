@@ -447,7 +447,7 @@ const Renderer = (() => {
     // 灵兽
     if (gs.activeBeast && !gs.isDead) {
       const mounted = !!mountName;
-      let bx = mp.x - (mounted ? 34 : 22), by = groundY + Math.round(Math.sin(animFrame * 0.06) * 1);
+      let bx = mp.x - (mounted ? 44 : 34), by = groundY + Math.round(Math.sin(animFrame * 0.06) * 1);
       const flying = ['thunder_eagle', 'phoenix', 'jade_dragon'].includes(gs.activeBeast.templateId);
       if (flying) by -= (mounted ? 30 : 16) + Math.round(Math.sin(animFrame * 0.05) * 2);
       if (beastAtk > 0) {
