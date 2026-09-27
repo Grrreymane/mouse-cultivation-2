@@ -2379,6 +2379,7 @@ const GameEngine = (() => {
     const realm = REALMS[realmIdx];
     const expToNext = getExpToNextLevel(state.level);
     const stats = getComputedStats();
+    if (state.hp > stats.maxHp) state.hp = stats.maxHp; // 换下装备/换成更弱的装备后，生命不超过上限
     const mount = VISUAL_EQUIP.mount[realmIdx];
     return {
       ...state,
