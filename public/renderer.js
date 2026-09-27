@@ -21,6 +21,7 @@ const Renderer = (() => {
   let dying = null;             // 正在消散的怪物
   let trib = null;              // 渡劫演出
   let levelBeam = 0;
+  let lastMouseY = 0;
   let lastState = null;
 
   // ========== 初始化 ==========
@@ -425,15 +426,23 @@ const Renderer = (() => {
     // 影子
     shadow(mp.x, groundY + 1, 9);
 
-    // 坐骑
+    // 坐骑：鼠鼠骑坐在背上（关闭自身浮空，坐骑前半身盖住腿和衣摆）
     const mount = gs.visualEquip && gs.visualEquip.mount;
     const mountName = mount === '仙鹤' ? 'mount_crane' : mount === '麒麟' ? 'mount_qilin' : null;
+    const riding = !!(mountName && !gs.isDead);
     let mouseY = groundY - 7;
-    if (mountName && !gs.isDead) {
-      const bob = Math.round(Math.sin(animFrame * 0.05) * 1);
-      PixelArt.draw(wctx, mountName, mp.x - 2, groundY + bob + Math.round(fl * 0.5), { frame: Math.floor(animFrame / 20) % 2 });
-      mouseY = groundY - (mountName === 'mount_crane' ? 19 : 20) + bob - 7 + Math.round(fl * 0.5) - Math.round(fl);
+    let mountDraw = null;
+    if (riding) {
+      const crane = mountName === 'mount_crane';
+      const bob = Math.round(Math.sin(animFrame * (crane ? 0.05 : 0.09)) * 1);
+      const my = groundY + bob - (crane ? 3 + Math.round(Math.sin(animFrame * 0.03) * 2) : 0);
+      const seat = my - (crane ? 25 : 29);
+      const mframe = Math.floor(animFrame / 20) % 2;
+      mountDraw = { name: mountName, x: mp.x - 3, y: my, frame: mframe, seat };
+      PixelArt.draw(wctx, mountName, mountDraw.x, my, { frame: mframe });
+      mouseY = seat - 4;
     }
+    lastMouseY = mouseY;
 
     // 灵兽
     if (gs.activeBeast && !gs.isDead) {
@@ -460,10 +469,17 @@ const Renderer = (() => {
       Sprites.drawMouseByRealm(wctx, mp.x + hitX, mouseY, 1, ri, animFrame, mouseAtk > 0 ? mouseAtk : 0, {
         equippedWeaponSkin: gs.equippedWeaponSkin || null,
         equippedArmorSkin: gs.equippedArmorSkin || null,
+        riding,
       });
       wctx.restore();
     }
-    if (shieldOn) drawShield(mp.x, mouseY + fl - 4);
+    if (mountDraw) { // 坐骑前半身盖住鼠鼠的腿
+      wctx.save();
+      wctx.beginPath(); wctx.rect(0, mountDraw.seat + 1, W, H); wctx.clip();
+      PixelArt.draw(wctx, mountDraw.name, mountDraw.x, mountDraw.y, { frame: mountDraw.frame });
+      wctx.restore();
+    }
+    if (shieldOn) drawShield(mp.x, mouseY + (riding ? 0 : fl) - 4);
 
     // 怪物
     const m = gs.currentMonster;
@@ -904,7 +920,7 @@ const Renderer = (() => {
     const top = m && m._top ? m._top : groundY - 20;
     return { x, y: top };
   }
-  function mouseTopWorld() { const mp = mousePos(); const gs = lastState; const lift = gs && gs.visualEquip && gs.visualEquip.mount ? 20 : 0; return { x: mp.x, y: groundY - 26 - lift + (gs ? mouseFloat(gs.realmIndex) : 0) }; }
+  function mouseTopWorld() { const mp = mousePos(); const gs = lastState; const riding = gs && gs.visualEquip && gs.visualEquip.mount; return { x: mp.x, y: (lastMouseY || groundY - 7) - 19 + (gs && !riding ? mouseFloat(gs.realmIndex) : 0) }; }
 
   let lastAttackFx = 0;
   const FX = {
