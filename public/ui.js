@@ -307,8 +307,9 @@ const UI = (() => {
     ['神通伤害', `+${c.skillDmg}%`, 't-blue'], ['', '', ''],
   ];
 
-  function itemStatText(item) {
-    const enh = 1 + (item.enhanceLevel || 0) * 0.08;
+  // enhLevel：该装备所在部位的强化等级（强化属于部位，背包装备按"穿上后"的数值显示）
+  function itemStatText(item, enhLevel) {
+    const enh = 1 + (enhLevel || 0) * 0.08;
     const parts = [];
     for (const [k, v] of Object.entries(item.baseAttr || {})) {
       const val = ['attack', 'defense', 'maxHp'].includes(k) ? Math.floor(v * enh) : v;
@@ -370,26 +371,29 @@ const UI = (() => {
         const eq = s.equipment[slot];
         if (!eq) return `<div class="card slot"><div class="slot-ico">${SLOT_ICONS[slot]}</div><div class="grow"><div class="item-name muted">${GameEngine.EQUIP_SLOT_NAMES[slot]} · 空</div><div class="muted small">击杀妖兽有概率掉落</div></div></div>`;
         const cost = GameEngine.getEquipEnhanceCost(eq);
-        const maxed = eq.enhanceLevel >= 15;
+        const enhLv = (s.slotEnhance || {})[slot] || 0;
+        const maxed = enhLv >= 15;
         return `<div class="card slot">
           <div class="slot-ico" style="--qc:${eq.qualityColor}">${SLOT_ICONS[slot]}</div>
           <div class="grow">
-            <div class="item-name" style="color:${eq.qualityColor}">${eq.name}<span class="enh">${eq.enhanceLevel ? '+' + eq.enhanceLevel : ''}</span></div>
-            <div class="muted small">${qualityLabel(eq.qualityIdx)} · Lv.${eq.level} · ${itemStatText(eq)}</div>
-            <div class="affix-list">${eq.affixes.map(a => `<span class="affix">◆ ${affixText(a, eq.enhanceLevel)}</span>`).join('')}</div>
+            <div class="item-name" style="color:${eq.qualityColor}">${eq.name}<span class="enh">${enhLv ? '+' + enhLv : ''}</span></div>
+            <div class="muted small">${qualityLabel(eq.qualityIdx)} · Lv.${eq.level} · ${itemStatText(eq, enhLv)}</div>
+            <div class="affix-list">${eq.affixes.map(a => `<span class="affix">◆ ${affixText(a, enhLv)}</span>`).join('')}</div>
           </div>
           <button class="btn sm ${!maxed && s.gold >= cost ? 'gold' : ''}" data-action="enhance" data-slot="${slot}" ${maxed || s.gold < cost ? 'disabled' : ''}>${maxed ? '已满' : `强化<span class="cost">${fmt(cost)}</span>`}</button>
         </div>`;
       }).join('');
+      // 品质更高却更弱时，多半是等级差距：直接标出来
+      const lowLv = (it, d) => { const cur = s.equipment[it.slot]; return d <= 0 && cur && it.qualityIdx > cur.qualityIdx && it.level < cur.level ? `<div class="muted" style="font-size:10px">低${cur.level - it.level}级</div>` : ''; };
       const items = s.inventory.map(it => ({ it, d: GameEngine.getEquipPowerDelta(it) }));
       items.sort((a, b) => (b.d > 0) - (a.d > 0) || b.it.qualityIdx - a.it.qualityIdx || b.d - a.d);
       const inv = items.map(({ it, d }) => `
         <div class="inv-item ${d > 0 ? 'better' : ''}" style="--qc:${it.qualityColor}">
           <div class="grow">
             <div><b style="color:${it.qualityColor}">${it.name}</b> <span class="tag">${GameEngine.EQUIP_SLOT_NAMES[it.slot]}</span> <span class="tag">${qualityLabel(it.qualityIdx)}</span> <span class="muted small">Lv.${it.level}</span></div>
-            <div class="muted small">${itemStatText(it)}${it.affixes.length ? '　' + it.affixes.map(a => affixText(a, 0)).join('　') : ''}</div>
+            <div class="muted small">${itemStatText(it, (s.slotEnhance || {})[it.slot])}${it.affixes.length ? '　' + it.affixes.map(a => affixText(a, (s.slotEnhance || {})[it.slot])).join('　') : ''}</div>
           </div>
-          <div class="small ${d > 0 ? 'delta-up' : 'delta-down'}" title="装备后战力变化">${d > 0 ? '▲' + fmt(d) : d < 0 ? '▼' + fmt(-d) : '='}</div>
+          <div class="small ${d > 0 ? 'delta-up' : 'delta-down'}" title="装备后战力变化">${d > 0 ? '▲' + fmt(d) : d < 0 ? '▼' + fmt(-d) : '='}${lowLv(it, d)}</div>
           <button class="btn sm ${d > 0 ? 'jade' : ''}" data-action="equip" data-id="${it.id}">装备</button>
           <button class="btn sm ghost" data-action="sell" data-id="${it.id}" title="出售 ${fmt(GameEngine.getEquipSellPrice(it))} 灵石">卖</button>
         </div>`).join('');
@@ -405,7 +409,7 @@ const UI = (() => {
       return `
       <div class="sec"><div class="sec-title">挂机设置</div>${autoCard}</div>
       <div class="sec"><div class="sec-title">已装备<span class="btns"><button class="btn sm gold" data-action="autoEquip">⚡一键换装</button></span></div>${slots}
-        <div class="hint">强化每级 +8% 基础属性与固定词条，最高 +15</div></div>
+        <div class="hint">强化属于<b>部位</b>，换上新装备不会丢失。每级 +8% 基础属性与固定词条，最高 +15；背包里的数值已按对应部位的强化计算</div></div>
       <div class="sec"><div class="sec-title">背包<span class="extra">${s.inventory.length}/${s.inventoryMax}</span><span class="btns"><button class="btn sm red" data-action="sellWeaker">出售弱装</button></span></div>
         ${inv || '<div class="hint">空空如也，打怪掉落装备吧</div>'}
       </div>`;

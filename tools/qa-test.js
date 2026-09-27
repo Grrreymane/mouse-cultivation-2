@@ -252,6 +252,27 @@ exerciseAll('Lv60');
   call('importSave json-ish', () => E.importSave(Buffer.from('{"level":"abc"}').toString('base64')));
 }
 
+// ---------- 部位强化：旧存档迁移 + 换装不丢强化 ----------
+{
+  cheat({ level: 30, gold: 1e15 });
+  const G = E._debug.generateEquipment;
+  const w = G(30, 3, 'weapon'); w.enhanceLevel = 9;
+  const bag = G(30, 2, 'weapon'); bag.enhanceLevel = 11;
+  const st = JSON.parse(Buffer.from(E.exportSave(), 'base64').toString('utf8'));
+  delete st.slotEnhance; st.equipment = { weapon: w, armor: null, accessory: null, boots: null }; st.inventory = [bag];
+  E.importSave(Buffer.from(JSON.stringify(st), 'utf8').toString('base64'));
+  const s = E.getState();
+  if (!s.slotEnhance || s.slotEnhance.weapon !== 11) report('部位强化', `旧存档迁移后武器部位 +${s.slotEnhance && s.slotEnhance.weapon}（应 +11）`);
+  if (s.equipment.weapon.enhanceLevel || s.inventory[0].enhanceLevel) report('部位强化', '迁移后物品强化未清零');
+  const before = s.slotEnhance.weapon;
+  E.equipItem(0);
+  if (E.getState().slotEnhance.weapon !== before) report('部位强化', '换装后部位强化改变');
+  const r = E.enhanceEquip('weapon');
+  if (r.success && E.getState().slotEnhance.weapon !== before + 1) report('部位强化', '强化未提升部位等级');
+  E.performAscension && cheat({ level: 60 }); E.performAscension();
+  if (E.getState().slotEnhance.weapon !== 0) report('部位强化', `飞升后部位强化未重置（+${E.getState().slotEnhance.weapon}）`);
+}
+
 // ---------- 离线收益 ----------
 {
   cheat({ level: 20 });
@@ -317,9 +338,9 @@ exerciseAll('Lv60');
     E.autoEquipBest();
     const slot = ['weapon', 'armor', 'accessory', 'boots'].find(k => S().equipment[k]);
     if (slot) {
-      const e0 = S().equipment[slot].enhanceLevel || 0, g0 = S().gold;
+      const e0 = S().slotEnhance[slot] || 0, g0 = S().gold;
       const r = E.enhanceEquip(slot);
-      if (r.success && (S().equipment[slot].enhanceLevel || 0) !== e0 + 1) report('强化', `强化后等级 ${e0}→${S().equipment[slot].enhanceLevel}`);
+      if (r.success && S().slotEnhance[slot] !== e0 + 1) report('强化', `强化后部位等级 ${e0}→${S().slotEnhance[slot]}`);
       if (r.success && S().gold >= g0) report('强化', '强化成功但没扣灵石');
     }
   }

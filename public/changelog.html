@@ -137,8 +137,8 @@
       <h1>🐭 鼠鼠修仙 · 迭代记录</h1>
       <p>每一个版本都是一次飞升 ✨</p>
       <div class="stats">
-        <div class="stat"><span class="stat-value">v3.4.1</span><span class="stat-label">当前版本</span></div>
-        <div class="stat"><span class="stat-value">37</span><span class="stat-label">版本迭代</span></div>
+        <div class="stat"><span class="stat-value">v3.5</span><span class="stat-label">当前版本</span></div>
+        <div class="stat"><span class="stat-value">38</span><span class="stat-label">版本迭代</span></div>
         <div class="stat"><span class="stat-value">~7000+</span><span class="stat-label">总代码行数</span></div>
         <div class="stat"><span class="stat-value">6天</span><span class="stat-label">开发周期</span></div>
       </div>
@@ -146,8 +146,32 @@
 
     <div class="timeline" id="timeline">
 
-      <!-- v3.4.1 -->
+      <!-- v3.5 -->
       <div class="version-card minor open">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v3.5</span>
+          <span class="version-title">部位强化 · 新装备终于有意义了</span>
+          <span class="version-date">2026-09-27</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">以前强化绑在装备上：一件 +15 的珍品比刚掉的传说还强，好装备换不上、自动换装也不认。现在强化改为跟着部位走。</div>
+          <div class="feature-group">
+            <div class="feature-group-title">⚔️ 装备 <span class="tag tag-balance">玩法</span></div>
+            <ul class="feature-list">
+              <li>强化等级属于<b>部位</b>（武器/衣服/饰品/鞋子），换上新装备自动继承，强化投入不再浪费</li>
+              <li>新装备只比品质和等级：同级传说必定强过身上的珍品，自动换装会直接换上</li>
+              <li>背包里的数值按对应部位的强化计算，和身上装备可以直接对比</li>
+              <li>品质更高却更弱的装备会标注「低 N 级」——跨境界时新境界装备更强是正常的</li>
+              <li>老存档自动迁移：每个部位取身上和背包里该部位最高的强化等级，一级都不丢</li>
+              <li>强化基础费用上调（强化不再会因换装作废，整体节奏与之前持平）</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v3.4.1 -->
+      <div class="version-card minor">
         <div class="version-header" onclick="toggleVersion(this)">
           <span class="version-badge minor">v3.4.1</span>
           <span class="version-title">全功能测试 · 修复</span>
