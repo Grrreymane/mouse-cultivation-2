@@ -324,6 +324,14 @@ const UI = (() => {
     return `${name} +${fmt(Math.floor(a.value * enh))}${GameEngine.PERCENT_STATS.has(a.stat) ? '%' : ''}`;
   }
   function qualityLabel(q) { return GameEngine.EQUIP_QUALITIES[q].label; }
+  // 温养按钮：装备等级落后时出现
+  function refineBtn(s, slot, eq) {
+    const c = GameEngine.getRefineCost(eq);
+    if (!c) return '';
+    const ok = s.gold >= c.gold && (s.materials.ore || 0) >= c.ore && (s.materials.essence || 0) >= c.essence;
+    const mats = `⛏️${c.ore}${c.essence ? ' 💎' + c.essence : ''}`;
+    return `<button class="btn sm ${ok ? 'jade' : ''}" data-action="refine" data-slot="${slot}" ${ok ? '' : 'disabled'} title="温养：提升到 Lv.${s.level}，品质和词条保留（${fmt(c.gold)} 灵石 · 矿石${c.ore}${c.essence ? ' · 精华' + c.essence : ''}）">温养→Lv.${s.level}<span class="cost">${fmt(c.gold)} ${mats}</span></button>`;
+  }
 
   const RENDER = {
     status(s) {
@@ -380,7 +388,10 @@ const UI = (() => {
             <div class="muted small">${qualityLabel(eq.qualityIdx)} · Lv.${eq.level} · ${itemStatText(eq, enhLv)}</div>
             <div class="affix-list">${eq.affixes.map(a => `<span class="affix">◆ ${affixText(a, enhLv)}</span>`).join('')}</div>
           </div>
-          <button class="btn sm ${!maxed && s.gold >= cost ? 'gold' : ''}" data-action="enhance" data-slot="${slot}" ${maxed || s.gold < cost ? 'disabled' : ''}>${maxed ? '已满' : `强化<span class="cost">${fmt(cost)}</span>`}</button>
+          <div class="slot-btns">
+            <button class="btn sm ${!maxed && s.gold >= cost ? 'gold' : ''}" data-action="enhance" data-slot="${slot}" ${maxed || s.gold < cost ? 'disabled' : ''}>${maxed ? '已满' : `强化<span class="cost">${fmt(cost)}</span>`}</button>
+            ${refineBtn(s, slot, eq)}
+          </div>
         </div>`;
       }).join('');
       // 品质更高却更弱时，多半是等级差距：直接标出来
@@ -409,7 +420,7 @@ const UI = (() => {
       return `
       <div class="sec"><div class="sec-title">挂机设置</div>${autoCard}</div>
       <div class="sec"><div class="sec-title">已装备<span class="btns"><button class="btn sm gold" data-action="autoEquip">⚡一键换装</button></span></div>${slots}
-        <div class="hint">强化属于<b>部位</b>，换上新装备不会丢失。每级 +8% 基础属性与固定词条，最高 +15；背包里的数值已按对应部位的强化计算</div></div>
+        <div class="hint">强化属于<b>部位</b>，换上新装备不会丢失。每级 +8% 基础属性与固定词条，最高 +15；背包里的数值已按对应部位的强化计算。<br>装备等级落后时可<b>温养</b>到当前等级，品质和词条保留——喜欢的红装可以一直用下去</div></div>
       <div class="sec"><div class="sec-title">背包<span class="extra">${s.inventory.length}/${s.inventoryMax}</span><span class="btns"><button class="btn sm red" data-action="sellWeaker">出售弱装</button></span></div>
         ${inv || '<div class="hint">空空如也，打怪掉落装备吧</div>'}
       </div>`;
@@ -504,7 +515,7 @@ const UI = (() => {
           <div class="grow">
             <div><b>${t.name}</b> <span class="lv-pips">Lv.${b.level}</span> ${active ? '<span class="tag t-gold">出战中</span>' : ''}</div>
             <div class="small t-purple">${t.skill}</div>
-            <div class="muted small">攻击+${Math.round(bb.atkPct)}% 防御+${Math.round(bb.defPct)}% · 协战 ${Math.round(bb.dmgMult * 100)}%攻击</div>
+            <div class="muted small">${active ? `攻击+${Math.round(bb.atkPct)}% 防御+${Math.round(bb.defPct)}% · 协战 ${Math.round(bb.dmgMult * 100)}%攻击` : `<span class="t-jade">护法中</span>：攻击+${(bb.atkPct * GameEngine.BEAST_GUARD_RATE).toFixed(1)}% 防御+${(bb.defPct * GameEngine.BEAST_GUARD_RATE).toFixed(1)}%<span class="faint">（出战时 +${Math.round(bb.atkPct)}% / +${Math.round(bb.defPct)}%）</span>`}</div>
           </div>
           <div style="display:flex;flex-direction:column;gap:4px">
             <button class="btn sm ${can ? 'gold' : ''}" data-action="feed" data-id="${b.id}" ${can ? '' : 'disabled'}>${capped ? '需鼠鼠升级' : `喂养<span class="cost">${fmt(cost)}</span>`}</button>
@@ -513,7 +524,8 @@ const UI = (() => {
           </div></div></div>`;
       }).join('');
       return `<div class="sec"><div class="sec-title">坐骑</div>${mountCard}</div>
-        <div class="sec"><div class="sec-title">灵兽<span class="extra">${s.beasts.length}/6 · 出战灵兽提供加成并协助攻击</span></div>${cards}</div>`;
+        <div class="sec"><div class="sec-title">灵兽<span class="extra">${s.beasts.length}/6</span></div>
+          <div class="hint" style="margin:0 0 8px">出战灵兽提供全额加成并协助攻击；其余灵兽担任<b>护法</b>，提供 ${Math.round(GameEngine.BEAST_GUARD_RATE * 100)}% 的攻防加成——每只都值得喂养</div>${cards}</div>`;
     },
 
     realm(s) {
