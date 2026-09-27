@@ -16,6 +16,11 @@ const UI = (() => {
   let skinFilter = 'all';
   let lastPulls = null;
   let logCollapsed = false;
+  let questCollapsed = false;
+  try {
+    const v = localStorage.getItem('mc2_questCollapsed');
+    questCollapsed = v === null ? window.matchMedia('(max-width: 860px)').matches : v === '1'; // 手机默认收起
+  } catch (e) {}
   const cache = {};
   let lastTabRender = 0;
 
@@ -83,13 +88,15 @@ const UI = (() => {
 
   function tabDots(s) {
     const dots = {};
-    dots.equip = s.inventory.some(it => GameEngine.getEquipPowerDelta(it) > 0);
-    dots.skills = GameEngine.SKILL_TREE.some(sk => s.realmIndex >= sk.realm && (s.skills[sk.id] || 0) < sk.maxLevel && s.gold >= GameEngine.getSkillCost(sk.id));
-    dots.realm = s.secretRealmCharges > 0 || (!s.towerDailyRewardClaimed && s.towerBestFloor > 0);
-    dots.cave = GameEngine.CAVE_BUILDINGS.some(b => s.level >= b.minLevel && (s.cave[b.id] || 0) < b.maxLevel && s.gold >= GameEngine.getCaveBuildingCost(b.id));
-    dots.gacha = s.tianjiTokens >= GameEngine.GACHA_COST_SINGLE;
-    dots.ascend = !!s.pendingTalentList || s.canAscend || GameEngine.ASCENSION_UPGRADES.some(u => (s.ascensionBonuses[u.id] || 0) < u.maxLevel && s.ascensionPoints >= GameEngine.getAscensionUpgradeCost(u, s.ascensionBonuses[u.id] || 0));
-    dots.pills = s.needTribulation && !(s.pills.trib_pill > 0);
+    // 'hot' = 需要玩家处理（红点）；'soft' = 有可升级项（小金点，不催促）
+    const lv = (hot, soft) => hot ? 'hot' : soft ? 'soft' : null;
+    dots.equip = lv(s.inventory.some(it => GameEngine.getEquipPowerDelta(it) > 0), false);
+    dots.skills = lv(false, GameEngine.SKILL_TREE.some(sk => s.realmIndex >= sk.realm && (s.skills[sk.id] || 0) < sk.maxLevel && s.gold >= GameEngine.getSkillCost(sk.id)));
+    dots.realm = lv(s.secretRealmCharges > 0 || (!s.towerDailyRewardClaimed && s.towerBestFloor > 0), false);
+    dots.cave = lv(false, GameEngine.CAVE_BUILDINGS.some(b => s.level >= b.minLevel && (s.cave[b.id] || 0) < b.maxLevel && s.gold >= GameEngine.getCaveBuildingCost(b.id)));
+    dots.gacha = lv(false, s.tianjiTokens >= GameEngine.GACHA_COST_SINGLE);
+    dots.ascend = lv(!!s.pendingTalentList || s.canAscend, GameEngine.ASCENSION_UPGRADES.some(u => (s.ascensionBonuses[u.id] || 0) < u.maxLevel && s.ascensionPoints >= GameEngine.getAscensionUpgradeCost(u, s.ascensionBonuses[u.id] || 0)));
+    dots.pills = lv(s.needTribulation && !(s.pills.trib_pill > 0), false);
     return dots;
   }
 
@@ -104,7 +111,8 @@ const UI = (() => {
       el.title = unlocked ? t.name : `${t.lock} 解锁`;
       let dot = el.querySelector('.dot');
       const want = unlocked && dots[t.id] && currentTab !== t.id;
-      if (want && !dot) { dot = document.createElement('i'); dot.className = 'dot'; el.appendChild(dot); }
+      if (want && !dot) { dot = document.createElement('i'); el.appendChild(dot); }
+      if (want) dot.className = 'dot ' + dots[t.id];
       if (!want && dot) dot.remove();
     }
   }
@@ -116,6 +124,11 @@ const UI = (() => {
     if (t.unlock && !t.unlock(s)) { toast(`【${t.name}】${t.lock} 解锁`, 'red'); Sound.play('error'); return; }
     currentTab = id;
     $('tabBody').scrollTop = 0;
+    // 手机端整页滚动：若已滚过标签栏，切换后回到新标签页顶部
+    if (window.matchMedia('(max-width: 860px)').matches) {
+      const top = $('tabs').parentElement.getBoundingClientRect().top + window.scrollY; // 标签栏是 sticky，用外层容器定位
+      if (window.scrollY > top) window.scrollTo(0, top);
+    }
     renderTab(true);
     updateTabs(s);
   }
@@ -187,15 +200,16 @@ const UI = (() => {
     const trib = $('tribCta');
     const showTrib = s.needTribulation && !s.isDead && !Renderer.isTribulating();
     trib.classList.toggle('on', showTrib);
+    $('battleArea').classList.toggle('trib-on', showTrib);
     if (showTrib) {
       const next = GameEngine.REALMS[Math.min(5, s.realmIndex + 1)];
       $('tribNext').textContent = next.name;
       $('tribNext').style.color = next.color;
       $('tribChance').textContent = Math.round(s.tribChance * 100) + '%';
       $('tribBtn').disabled = s.tribCooldown > 0;
-      $('tribBtn').firstChild.textContent = s.tribCooldown > 0 ? `天劫余威 ${s.tribCooldown}s ` : '⚡ 渡 劫 ';
+      $('tribBtn').firstChild.textContent = s.tribCooldown > 0 ? `余威 ${s.tribCooldown}s ` : '⚡ 渡劫 ';
       const tips = [];
-      if (!(s.buffs.tribBoost && s.buffs.tribBoost.until > now)) tips.push((s.pills.trib_pill || 0) > 0 ? '💊 先服用金元丹（+25%）' : '💊 炼制金元丹可+25%');
+      if (!(s.buffs.tribBoost && s.buffs.tribBoost.until > now)) tips.push((s.pills.trib_pill || 0) > 0 ? '💊 先服金元丹 +25%' : '💊 金元丹 +25%');
       if (!s.activeBeastId) tips.push('🐾 灵兽出战+5%');
       if (s.tribFailStreak > 0) tips.push(`道心+${s.tribFailStreak * 10}%`);
       $('tribTip').textContent = tips.join(' · ') || '准备就绪，放手一搏！';
@@ -232,8 +246,15 @@ const UI = (() => {
     const el = $('questCard');
     if (!q) { setHTML(el, '', 'quest'); return; }
     el.classList.toggle('ready', q.done);
-    const prog = q.progressValue ? `<div class="q-prog"><i style="width:${Math.min(100, q.progressValue[0] / q.progressValue[1] * 100)}%"></i></div>` : '';
-    const html = `<div class="q-head">📜 修行指引<span class="q-idx">${q.index + 1}/${q.total}</span></div>
+    const mini = questCollapsed && !q.done; // 可领取时总是展开
+    el.classList.toggle('mini', mini);
+    const pct = q.progressValue ? Math.min(100, q.progressValue[0] / q.progressValue[1] * 100) : 0;
+    const prog = q.progressValue ? `<div class="q-prog"><i style="width:${pct}%"></i></div>` : '';
+    if (mini) {
+      setHTML(el, `<button class="q-chip" data-action="toggleQuest" title="展开修行指引">📜 <b>${esc(q.title)}</b>${q.progressValue ? `<span class="q-chip-n">${Math.min(q.progressValue[0], q.progressValue[1])}/${q.progressValue[1]}</span>` : ''}<span class="q-caret">▾</span></button>`, 'quest');
+      return;
+    }
+    const html = `<div class="q-head">📜 修行指引<span class="q-idx">${q.index + 1}/${q.total}</span>${q.done ? '' : '<button class="q-min" data-action="toggleQuest" title="收起">▴</button>'}</div>
       <div class="q-title">${q.title}</div>
       <div class="q-desc">${q.desc}${q.progressValue ? `（${Math.min(q.progressValue[0], q.progressValue[1])}/${q.progressValue[1]}）` : ''}</div>
       ${prog}
@@ -250,6 +271,12 @@ const UI = (() => {
     el.innerHTML = log.slice(-40).map(l => `<p>${l}</p>`).join('');
     el.scrollTop = el.scrollHeight;
     $('dpsValue').textContent = fmt(s.dps);
+  }
+
+  function toggleQuest() {
+    questCollapsed = !questCollapsed;
+    try { localStorage.setItem('mc2_questCollapsed', questCollapsed ? '1' : '0'); } catch (e) {}
+    updateQuest(GameEngine.getState());
   }
 
   function toggleLog() {
@@ -701,6 +728,6 @@ const UI = (() => {
 
   return {
     initTabs, update, renderTab, toast, modal, closeModal, modalButton, confirmBox,
-    setTab, setCodexSub, setSkinFilter, setLastPulls, getCurrentTab, flashSkill, toggleLog, drawMouseTo, showTalentChoice,
+    setTab, setCodexSub, setSkinFilter, setLastPulls, getCurrentTab, flashSkill, toggleLog, toggleQuest, drawMouseTo, showTalentChoice,
   };
 })();

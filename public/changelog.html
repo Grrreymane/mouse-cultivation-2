@@ -137,8 +137,8 @@
       <h1>🐭 鼠鼠修仙 · 迭代记录</h1>
       <p>每一个版本都是一次飞升 ✨</p>
       <div class="stats">
-        <div class="stat"><span class="stat-value">v3.3</span><span class="stat-label">当前版本</span></div>
-        <div class="stat"><span class="stat-value">35</span><span class="stat-label">版本迭代</span></div>
+        <div class="stat"><span class="stat-value">v3.4</span><span class="stat-label">当前版本</span></div>
+        <div class="stat"><span class="stat-value">36</span><span class="stat-label">版本迭代</span></div>
         <div class="stat"><span class="stat-value">~7000+</span><span class="stat-label">总代码行数</span></div>
         <div class="stat"><span class="stat-value">6天</span><span class="stat-label">开发周期</span></div>
       </div>
@@ -146,8 +146,39 @@
 
     <div class="timeline" id="timeline">
 
-      <!-- v3.3 -->
+      <!-- v3.4 -->
       <div class="version-card minor open">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v3.4</span>
+          <span class="version-title">界面减负 · 战斗画面不再被遮挡 · 手机端优化</span>
+          <span class="version-date">2026-09-27</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">把挡在战斗画面中间的卡片挪开，手机上也能完整看到鼠鼠打怪。</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🖥️ 界面 <span class="tag tag-visual">界面</span></div>
+            <ul class="feature-list">
+              <li>渡劫提示从画面中央的大卡片改为紧凑横条：电脑端在顶部卡片下方，手机端在地面与神通栏之间，按钮带呼吸光</li>
+              <li>修行指引可以收起成一枚小标签（▴ 收起 / 点击展开）；可领取奖励时自动展开；手机端默认收起</li>
+              <li>标签页提示分级：红点 = 需要处理（更强装备、秘境次数、渡劫缺丹、待选天赋），小金点 = 有可升级项</li>
+              <li>战力数字不再折行</li>
+            </ul>
+          </div>
+          <div class="feature-group">
+            <div class="feature-group-title">📱 手机端 <span class="tag tag-visual">界面</span></div>
+            <ul class="feature-list">
+              <li>五种资源一行排满，不再被截断</li>
+              <li>十个标签页改为 5×2 网格全部可见，不用横向滑动</li>
+              <li>连斩提示移到角色卡片下方，不挡战斗</li>
+              <li>滚动到下方时切换标签页，会自动回到新标签页顶部</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v3.3 -->
+      <div class="version-card minor">
         <div class="version-header" onclick="toggleVersion(this)">
           <span class="version-badge minor">v3.3</span>
           <span class="version-title">妖兽图鉴级重绘 · 灵兽 · 坐骑 · 全部妖兽</span>
