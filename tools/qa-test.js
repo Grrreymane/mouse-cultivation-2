@@ -308,6 +308,48 @@ exerciseAll('Lv60');
   if (p2 <= p1) report('护法', `多一只护法灵兽战力没有提升（${p1} → ${p2}）`);
 }
 
+// ---------- 守关妖王 ----------
+{
+  let bossSpawns = 0, bossKills = 0;
+  const prevCb = null;
+  const S = () => E.getState();
+  const strong = { baseAttack: 1e12, baseDefense: 1e9, baseMaxHp: 1e14 };
+  // 1) 瓶颈期出现并被击败
+  cheat({ level: 29, exp: 1e15, bossDefeated: {}, bossRetryAt: 0, bossBlessing: false, needTribulation: false, ...strong });
+  const tok0 = S().tianjiTokens;
+  for (let i = 0; i < 200 && !(S().bossDefeated || {})[2]; i++) sim.tick(1);
+  let s = S();
+  if (!s.needTribulation) report('妖王', '满修为后未进入瓶颈');
+  if (!(s.bossDefeated || {})[2]) report('妖王', '瓶颈期妖王未出现或未被击败');
+  else {
+    if (!s.bossBlessing) report('妖王', '击败后没有渡劫加成');
+    if (s.tianjiTokens <= tok0) report('妖王', '击败后没有获得天机令');
+    if (s.bossPending) report('妖王', '击败后仍 bossPending');
+    for (let i = 0; i < 40; i++) { sim.tick(1); if (S().currentMonster && S().currentMonster.isBoss) { report('妖王', '击败后妖王再次出现'); break; } }
+    const c1 = S().tribChance; cheat({ bossBlessing: false, ...strong }); const c0 = S().tribChance; cheat({ bossBlessing: true, ...strong });
+    if (!(c1 > c0) && c0 < 0.95) report('妖王', `妖王印记未提高渡劫率 ${c0} → ${c1}`);
+    let ok = false; for (let i = 0; i < 30 && !ok; i++) { sim.advance(120000); const r = E.attemptTribulation(); ok = r && r.success; }
+    if (ok && S().bossBlessing) report('妖王', '渡劫成功后妖王印记未清除');
+  }
+  // 2) 打不过：退去 90 秒后再来
+  cheat({ level: 39, needTribulation: true, exp: 1e15, bossDefeated: {}, bossRetryAt: 0, bossBlessing: false });
+  if (!S().currentMonster || !S().currentMonster.isBoss) report('妖王', '瓶颈期没有出现守关妖王');
+  if (!S().bossPending) report('妖王', 'bossPending 为 false');
+  cheat({ baseAttack: 1, baseDefense: 0, baseMaxHp: 5 });
+  let died = false;
+  for (let i = 0; i < 400 && !died; i++) { sim.tick(1); if (S().isDead) died = true; }
+  if (!died) report('妖王', '极弱属性打妖王未阵亡');
+  else if (S().bossRetryIn <= 0) report('妖王', '被妖王击败后没有设置再战时间');
+  sim.advance(20000); sim.tick(2);
+  if (S().currentMonster && S().currentMonster.isBoss) report('妖王', '妖王退去冷却期间又立刻出现');
+  sim.advance(120000);
+  cheat({ ...strong });
+  if (!S().currentMonster || !S().currentMonster.isBoss) report('妖王', '冷却结束后妖王没有再次出现');
+  // 3) 大乘期不出现
+  cheat({ level: 60, needTribulation: false });
+  if (S().currentMonster && S().currentMonster.isBoss) report('妖王', '大乘期出现了守关妖王');
+}
+
 // ---------- 离线收益 ----------
 {
   cheat({ level: 20 });

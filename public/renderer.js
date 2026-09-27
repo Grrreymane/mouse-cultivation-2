@@ -492,9 +492,11 @@ const Renderer = (() => {
       const sz = PixelArt.size(m.name);
       shadow(mx, groundY + 1, Math.max(6, Math.floor(sz.w * 0.35)));
       const frame = Math.floor(animFrame / (monsterWalkIn < 1 ? 6 : 22)) % 2;
-      if (m.isElite) drawEliteAura(m.name, mx, groundY, frame);
+      if (m.isBoss) drawBossAura(m.name, mx, groundY, frame);
+      else if (m.isElite) drawEliteAura(m.name, mx, groundY, frame);
       PixelArt.draw(wctx, m.name, mx, groundY, { frame, flash: monsterHit > 6 ? 0.85 : 0 });
       m._screenX = mx; m._top = groundY - sz.ay;
+      if (m.isBoss) drawBossCrown(mx, m._top - 3 + Math.round(Math.sin(animFrame * 0.08)));
     }
 
     // 正在消散的怪物像素
@@ -540,6 +542,29 @@ const Renderer = (() => {
     wctx.fillRect(x - rx + 2, y - 2, rx * 2 - 4, 1);
   }
 
+  // 守关妖王：两圈红金光 + 头顶像素王冠 + 飘散的妖气
+  function drawBossAura(name, x, y, frame) {
+    const sp = PixelArt.getSprite(name);
+    if (!sp) return;
+    const img = sp.flashes[frame % sp.flashes.length];
+    const pulse = 0.55 + Math.sin(animFrame * 0.12) * 0.25;
+    wctx.save();
+    wctx.globalAlpha = pulse * 0.6;
+    const outer = eliteTmp(img, '#FF3A2A');
+    for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2], [-1, -1], [1, -1], [-1, 1], [1, 1]]) wctx.drawImage(outer, x - sp.ax + dx, y - sp.ay + dy);
+    wctx.globalAlpha = pulse;
+    const inner = eliteTmp(img, '#FFD24A');
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) wctx.drawImage(inner, x - sp.ax + dx, y - sp.ay + dy);
+    wctx.restore();
+    if (animFrame % 6 === 0) addParticlesWorld(x + (Math.random() - 0.5) * sp.w * 0.8, y - Math.random() * sp.ay, Math.random() < 0.5 ? '#FF5A3A' : '#8A2A6A', 1, 0.5);
+  }
+  function drawBossCrown(x, y) {
+    const G = '#FFD24A', D = '#C9941E', R = '#FF3A4A';
+    const rows = ['G..G..G', 'GG.G.GG', 'GGGGGGG', 'DDDDDDD'];
+    rows.forEach((row, j) => [...row].forEach((c, i) => { if (c === '.') return; wctx.fillStyle = c === 'G' ? G : D; wctx.fillRect(x - 3 + i, y - 4 + j, 1, 1); }));
+    wctx.fillStyle = R; wctx.fillRect(x, y - 2, 1, 1);
+  }
+
   function drawEliteAura(name, x, y, frame) {
     const sp = PixelArt.getSprite(name);
     if (!sp) return;
@@ -553,11 +578,14 @@ const Renderer = (() => {
     wctx.restore();
   }
   const eliteCache = new WeakMap();
-  function eliteTmp(img) {
-    if (eliteCache.has(img)) return eliteCache.get(img);
+  function eliteTmp(img, color) {
+    color = color || '#FFD24A';
+    let byColor = eliteCache.get(img);
+    if (!byColor) { byColor = {}; eliteCache.set(img, byColor); }
+    if (byColor[color]) return byColor[color];
     const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
-    const x = c.getContext('2d'); x.drawImage(img, 0, 0); x.globalCompositeOperation = 'source-in'; x.fillStyle = '#FFD24A'; x.fillRect(0, 0, c.width, c.height);
-    eliteCache.set(img, c);
+    const x = c.getContext('2d'); x.drawImage(img, 0, 0); x.globalCompositeOperation = 'source-in'; x.fillStyle = color; x.fillRect(0, 0, c.width, c.height);
+    byColor[color] = c;
     return c;
   }
 
@@ -835,16 +863,16 @@ const Renderer = (() => {
 
   function drawMonsterBar(m) {
     const s = toScreen(m._screenX, groundY);
-    const bw = 76, bh = 6;
+    const bw = m.isBoss ? 110 : 76, bh = m.isBoss ? 8 : 6;
     const x = Math.round(s.x - bw / 2), y = Math.round(s.y + PX * 5 + 18);
     // 名字
     ctx.font = 'bold 12px "PingFang SC","Microsoft YaHei",sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    const name = (m.isElite ? '★ ' : '') + m.name;
+    const name = m.isBoss ? '👑 守关妖王·' + m.name : (m.isElite ? '★ ' : '') + m.name;
     const traitIcon = m.trait && GameEngine.TRAIT_INFO[m.trait] ? GameEngine.TRAIT_INFO[m.trait].icon + ' ' : '';
     ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
     ctx.strokeText(traitIcon + name, s.x, y - 5);
-    ctx.fillStyle = m.isElite ? '#FFD86A' : '#F2EEE6';
+    ctx.fillStyle = m.isBoss ? '#FF9A5A' : m.isElite ? '#FFD86A' : '#F2EEE6';
     ctx.fillText(traitIcon + name, s.x, y - 5);
     // 血条
     ctx.fillStyle = 'rgba(10,8,20,0.85)'; ctx.fillRect(x - 2, y - 2, bw + 4, bh + 4);
@@ -998,12 +1026,14 @@ const Renderer = (() => {
       spawnCoins(x, groundY - 10, Math.min(8, 2 + (m.isElite ? 6 : 0)));
       const t = { x, y: groundY - 30 };
       addText(t.x, t.y - 10, '+' + GameEngine.formatNumber(d.goldGain), '#FFD86A', { size: 10, jitter: false, float: true, life: 50 });
-      if (m.isElite) { addText(t.x, t.y - 26, '精英击杀！', '#FFD86A', { pixel: false, size: 15, jitter: false }); flash = 0.3; flashColor = '#FFE8A0'; }
+      if (m.isBoss) { addText(t.x, t.y - 30, '妖王伏诛！', '#FF9A5A', { pixel: false, size: 20, jitter: false, life: 90 }); flash = 0.5; flashColor = '#FFD8A0'; shake = 6; addParticlesWorld(x, groundY - 16, '#FFD24A', 30, 2.4); }
+      else if (m.isElite) { addText(t.x, t.y - 26, '精英击杀！', '#FFD86A', { pixel: false, size: 15, jitter: false }); flash = 0.3; flashColor = '#FFE8A0'; }
       monsterWalkIn = 0;
       const ks = gs ? gs.consecutiveKills : 0;
       if ([10, 25, 50, 100, 200].includes(ks)) addText(W / 2, H * 0.3, `${ks} 连斩！`, '#FF9A4A', { pixel: false, size: 22, jitter: false, float: true, life: 70 });
     },
     spawn() { /* 走入动画在击杀时重置 */ },
+    bossSpawn() { shake = 5; flash = 0.25; flashColor = '#FF5A3A'; addText(W / 2, H * 0.34, '守关妖王现身！', '#FF7A4A', { pixel: false, size: 20, jitter: false, float: true, life: 90 }); },
     levelup(d) { levelBeam = 50; const mp = mouseTopWorld(); addText(mp.x, mp.y - 12, 'LEVEL UP', '#9FF0FF', { size: 14, jitter: false, float: true, life: 70 }); addParticlesWorld(mousePos().x, groundY - 10, '#9FF0FF', 16, 1.8); },
     death() { shake = 8; flash = 0.35; flashColor = '#FF3A4A'; addParticlesWorld(mousePos().x, groundY - 10, '#FF6A7A', 24, 2.2); },
     revive() { addEffect({ type: 'ring', x: mousePos().x, y: groundY - 6, color: '#7CF29A' }); addParticlesWorld(mousePos().x, groundY - 10, '#7CF29A', 20, 1.8); },

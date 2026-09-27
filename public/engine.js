@@ -606,6 +606,7 @@ const GameEngine = (() => {
       saveVersion: SAVE_VERSION,
       level: 1, exp: 0, gold: 0,
       slotEnhance: { weapon: 0, armor: 0, accessory: 0, boots: 0 },
+      bossDefeated: {}, bossRetryAt: 0, bossBlessing: false,
       baseAttack: 5, baseDefense: 1, baseMaxHp: 100, hp: 100,
       baseCritRate: 5, baseCritDamage: 150,
       killCount: 0, totalGold: 0, totalExp: 0,
@@ -923,7 +924,32 @@ const GameEngine = (() => {
   }
   function getRealm(level) { return REALMS[getRealmIndex(level)]; }
 
+  // ========== 守关妖王 ==========
+  // 境界瓶颈（修为圆满、待渡劫）时出现一次；击败得厚礼与渡劫加成，打不过也不卡进度
+  // 难度随境界递增：炼气期的第一只妖王要让新手挂机也能打过
+  const BOSS = { hpMult: [1.6, 2.0, 2.2, 2.2, 2.4], atkMult: [0.95, 1.1, 1.2, 1.25, 1.3], retryMs: 90000, tribBonus: 0.2 };
+  function bossAvailable() {
+    const ri = getRealmIndex(state.level);
+    return state.needTribulation && ri < 5 && !(state.bossDefeated || {})[ri] && Date.now() >= (state.bossRetryAt || 0);
+  }
+  function spawnBoss(level) {
+    const realmIdx = getRealmIndex(level);
+    const t = MONSTER_TEMPLATES[realmIdx][2];
+    const base = monsterBase(level);
+    const hpBars = 3 + realmIdx;
+    const barHp = Math.floor(base.hp * t.hp * BOSS.hpMult[realmIdx]);
+    return {
+      name: t.name, tier: realmIdx, level, isBoss: true, isElite: true,
+      hp: barHp, maxHp: barHp,
+      atk: Math.floor(base.atk * t.atk * BOSS.atkMult[realmIdx]),
+      exp: 1, gold: Math.floor(goldPerKill(level) * t.gold * 30),
+      trait: t.trait, hpBars, currentBar: hpBars,
+      totalHp: barHp * hpBars, totalMaxHp: barHp * hpBars,
+    };
+  }
+
   function spawnMonster(level) {
+    if (bossAvailable()) return spawnBoss(level);
     const realmIdx = getRealmIndex(level);
     const monsters = MONSTER_TEMPLATES[realmIdx];
     const templateIdx = Math.floor(Math.random() * monsters.length);
@@ -953,7 +979,8 @@ const GameEngine = (() => {
   function spawnNext() {
     state.currentMonster = spawnMonster(state.level);
     const m = state.currentMonster;
-    if (m.isElite) addLog(`⭐ 精英妖兽【${m.name}】出现了！`);
+    if (m.isBoss) { addLog(`👑 守关妖王【${m.name}】拦住去路！击败它可获厚礼与渡劫加成`); emit('bossSpawn', { monster: m }); }
+    else if (m.isElite) addLog(`⭐ 精英妖兽【${m.name}】出现了！`);
     emit('spawn', { monster: m });
   }
 
@@ -1039,6 +1066,7 @@ const GameEngine = (() => {
       }
       addLog(`💀 ⭐${m.name} 被击败！+${formatNumber(expGain)}修为 +${formatNumber(goldGain)}灵石`);
     }
+    if (m.isBoss) onBossKilled(m);
     emit('kill', { monster: m, expGain, goldGain });
     processDrops(m);
     tryEncounter();
@@ -1046,6 +1074,21 @@ const GameEngine = (() => {
     checkLevelUp();
     checkAchievements();
     spawnNext();
+  }
+
+  function onBossKilled(m) {
+    const ri = m.tier;
+    state.bossDefeated = state.bossDefeated || {};
+    state.bossDefeated[ri] = true;
+    state.bossBlessing = true;
+    const tokens = 5 + ri * 3;
+    state.tianjiTokens += tokens;
+    const essence = 3 + ri * 3;
+    state.materials.essence += essence;
+    const equip = generateEquipment(state.level, Math.random() < 0.3 ? 5 : 4);
+    addLog(`👑 守关妖王【${m.name}】伏诛！获得 ${tokens} 天机令、精华×${essence}、${EQUIP_QUALITIES[equip.qualityIdx].label}装备，渡劫成功率 +${Math.round(BOSS.tribBonus * 100)}%`);
+    handleNewEquip(equip, true);
+    emit('bossKill', { monster: m, tokens, essence, equip });
   }
 
   function gainExp(amount) {
@@ -1276,6 +1319,10 @@ const GameEngine = (() => {
   // ========== 死亡/复活 ==========
   function handlePlayerDeath() {
     state.isDead = true;
+    if (state.currentMonster && state.currentMonster.isBoss) {
+      state.bossRetryAt = Date.now() + BOSS.retryMs;
+      addLog(`👑 守关妖王【${state.currentMonster.name}】暂时退去，${BOSS.retryMs / 1000}秒后再来`);
+    }
     state.deathCount++;
     state.consecutiveKills = 0;
     state.playerDoTs = [];
@@ -1540,6 +1587,7 @@ const GameEngine = (() => {
     if (state.buffs.tribBoost && Date.now() < state.buffs.tribBoost.until) chance += state.buffs.tribBoost.value;
     if (state.activeBeastId) chance += 0.05;
     chance += (state.tribFailStreak || 0) * 0.1;
+    if (state.bossBlessing) chance += BOSS.tribBonus;
     return Math.min(0.95, chance);
   }
 
@@ -1552,6 +1600,7 @@ const GameEngine = (() => {
     const chance = getTribulationChance();
     if (Math.random() < chance) {
       state.needTribulation = false;
+      state.bossBlessing = false;
       state.tribFailStreak = 0;
       state.exp = 0;
       state.level++;
@@ -2456,6 +2505,8 @@ const GameEngine = (() => {
       },
       activeBeast: getActiveBeast(),
       tribChance: state.needTribulation ? getTribulationChance() : null,
+      bossPending: state.needTribulation && getRealmIndex(state.level) < 5 && !(state.bossDefeated || {})[getRealmIndex(state.level)],
+      bossRetryIn: Math.max(0, Math.ceil(((state.bossRetryAt || 0) - Date.now()) / 1000)),
       tribCooldown: Math.max(0, Math.ceil((state.tribulationCooldown - Date.now()) / 1000)),
       dps: getCurrentDPS(),
       reviveCountdown: state.isDead ? Math.max(0, Math.ceil((state.reviveTime - Date.now()) / 1000)) : 0,
@@ -2495,7 +2546,7 @@ const GameEngine = (() => {
     claimFortune, FORTUNES, FORTUNE_LIFE, setAutoEquip, setAutoSellQuality, setAutoPill, AUTO_PILL_LEVEL, chooseTalent,
     // 洞府/成就/任务
     upgradeCaveBuilding, maxUpgradeCave, getCaveBuildingCost, CAVE_BUILDINGS, CAVE_EFFECT_NAMES,
-    ACHIEVEMENTS, describeReward, claimQuest, QUESTS,
+    ACHIEVEMENTS, describeReward, claimQuest, QUESTS, BOSS,
     // 常量
     REALMS, EQUIP_QUALITIES, EQUIP_SLOT_NAMES, MONSTER_TEMPLATES, TRAIT_INFO, STAT_NAMES, PERCENT_STATS,
     // 飞升

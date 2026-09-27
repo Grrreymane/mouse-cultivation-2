@@ -278,6 +278,8 @@
       case 'encounter': UI.toast(`🎲 奇遇·${data.event.name}！${data.rewards.join('、')}`, 'gold'); Sound.play('rare'); break;
       case 'questReady': UI.toast(`📜 修行指引「${data.quest.title}」完成，领取奖励吧`, 'gold'); Sound.play('quest'); break;
       case 'tokenDrop': Sound.play('drop'); break;
+      case 'bossSpawn': Sound.play('rare'); UI.toast(`👑 守关妖王【${data.monster.name}】拦住去路！击败可得厚礼、渡劫成功率 +${Math.round(GameEngine.BOSS.tribBonus * 100)}%`, 'gold'); break;
+      case 'bossKill': Sound.play('breakthrough'); UI.toast(`👑 妖王伏诛！天机令×${data.tokens}、精华×${data.essence}、<b style="color:${data.equip.qualityColor}">${data.equip.name}</b>，渡劫成功率 +${Math.round(GameEngine.BOSS.tribBonus * 100)}%`, 'gold'); break;
       case 'hpBarBreak': Sound.play('crit'); break;
       case 'fortuneSpawn': {
         Sound.play('rare');
