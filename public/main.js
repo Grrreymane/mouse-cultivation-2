@@ -67,6 +67,7 @@
     autoEquip: () => result(GameEngine.autoEquipBest()),
     sellWeaker: () => { const r = GameEngine.sellWeakerItems(); if (r.count) Sound.play('coin'); result(r); },
     enhance: el => { const r = GameEngine.enhanceEquip(el.dataset.slot); if (r.success) Sound.play('levelup'); result(r); },
+    refine: el => { const r = GameEngine.refineEquip(el.dataset.slot); if (r.success) Sound.play('levelup'); result(r, null, 'gold'); },
 
     // 功法 / 丹药 / 灵兽 / 洞府
     skillUp: el => { const r = GameEngine.upgradeSkill(el.dataset.id); if (r.success) Sound.play('click'); result(r); },

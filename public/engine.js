@@ -181,12 +181,7 @@ const GameEngine = (() => {
     const quality = EQUIP_QUALITIES[qualityIdx];
     const name = EQUIP_NAMES[slot][Math.min(realmIdx, EQUIP_NAMES[slot].length - 1)];
     const ref = refBase(level);
-    const qm = quality.statMult;
-    const baseAttr = {};
-    if (slot === 'weapon') baseAttr.attack = Math.ceil(ref.atk * 0.3 * qm);
-    else if (slot === 'armor') { baseAttr.defense = Math.ceil(ref.def * 0.6 * qm); baseAttr.maxHp = Math.ceil(ref.hp * 0.05 * qm); }
-    else if (slot === 'accessory') baseAttr.maxHp = Math.ceil(ref.hp * 0.25 * qm);
-    else if (slot === 'boots') { baseAttr.dodge = 1 + qualityIdx; baseAttr.atkSpeed = 3 + 3 * qualityIdx; }
+    const baseAttr = equipBaseAttr(slot, qualityIdx, level);
     const affixes = [];
     const used = new Set();
     for (let i = 0; i < quality.affixCount; i++) {
@@ -208,6 +203,28 @@ const GameEngine = (() => {
 
   // 强化等级属于部位（换装不丢失），费用按当前穿戴装备的等级/品质计算
   function slotEnhanceLevel(slot) { return (state && state.slotEnhance && state.slotEnhance[slot]) || 0; }
+  function equipBaseAttr(slot, qualityIdx, level) {
+    const ref = refBase(level);
+    const qm = EQUIP_QUALITIES[qualityIdx].statMult;
+    const baseAttr = {};
+    if (slot === 'weapon') baseAttr.attack = Math.ceil(ref.atk * 0.3 * qm);
+    else if (slot === 'armor') { baseAttr.defense = Math.ceil(ref.def * 0.6 * qm); baseAttr.maxHp = Math.ceil(ref.hp * 0.05 * qm); }
+    else if (slot === 'accessory') baseAttr.maxHp = Math.ceil(ref.hp * 0.25 * qm);
+    else if (slot === 'boots') { baseAttr.dodge = 1 + qualityIdx; baseAttr.atkSpeed = 3 + 3 * qualityIdx; }
+    return baseAttr;
+  }
+
+  // 温养：把身上等级落后的装备提升到当前等级（品质、词条种类不变，数值按等级重算）
+  function getRefineCost(equip) {
+    if (!equip || !state || equip.level >= state.level) return null;
+    const gap = state.level - equip.level, q = equip.qualityIdx;
+    return {
+      gold: Math.floor(6 * goldPerKill(state.level) * (1 + q)),
+      ore: Math.ceil(gap * (1 + q)),
+      essence: q >= 3 ? Math.ceil(gap * (q - 2) * 0.5) : 0,
+    };
+  }
+
   function getEquipEnhanceCost(equip) {
     if (!equip) return Infinity;
     return Math.floor(18 * goldPerKill(equip.level || 1) * Math.pow(1.32, slotEnhanceLevel(equip.slot)) * (1 + equip.qualityIdx * 0.3));
@@ -281,6 +298,7 @@ const GameEngine = (() => {
       skill: '涅槃之火：每次攻击回复1.5%生命', captureChance: 0.004, minRealm: 4 },
   ];
 
+  const BEAST_GUARD_RATE = 0.25;
   function getBeastFeedCost(beastId) {
     const b = state.beasts.find(x => x.id === beastId);
     if (!b) return Infinity;
@@ -807,6 +825,12 @@ const GameEngine = (() => {
       if (beastSkill === 'ice_wolf') pct.defense += 15;
       if (beastSkill === 'shadow_serpent') dodge += 10;
       if (beastSkill === 'jade_dragon') pct.attack += 20;
+    }
+    // 护法：未出战的灵兽提供 25% 的攻防加成
+    for (const b of state.beasts || []) {
+      if (b.id === state.activeBeastId) continue;
+      const hb = beastBonus(b);
+      pct.attack += hb.atkPct * BEAST_GUARD_RATE; pct.defense += hb.defPct * BEAST_GUARD_RATE;
     }
 
     // 成就
@@ -1995,6 +2019,32 @@ const GameEngine = (() => {
     return { success: true, count: sold, gold, msg: sold > 0 ? `出售 ${sold} 件，获得 ${formatNumber(gold)} 灵石` : '没有比身上弱的装备' };
   }
 
+  function refineEquip(slot) {
+    const item = state.equipment[slot];
+    if (!item) return { success: false, msg: '无装备' };
+    const cost = getRefineCost(item);
+    if (!cost) return { success: false, msg: '装备已是当前等级' };
+    if (state.gold < cost.gold) return { success: false, msg: `灵石不足（需要${formatNumber(cost.gold)}）` };
+    if ((state.materials.ore || 0) < cost.ore) return { success: false, msg: `矿石不足（需要${cost.ore}）` };
+    if ((state.materials.essence || 0) < cost.essence) return { success: false, msg: `精华不足（需要${cost.essence}）` };
+    state.gold -= cost.gold;
+    state.materials.ore -= cost.ore;
+    state.materials.essence -= cost.essence;
+    const oldLv = item.level, newLv = clampLevel(state.level);
+    const oldRef = refBase(oldLv), newRef = refBase(newLv);
+    item.baseAttr = equipBaseAttr(item.slot, item.qualityIdx, newLv);
+    for (const a of item.affixes || []) {
+      const def = EQUIP_AFFIXES.find(x => x.id === a.id);
+      if (def && def.scale) a.value = Math.max(1, Math.ceil(a.value * newRef[def.scale] / Math.max(1, oldRef[def.scale])));
+    }
+    item.level = newLv;
+    item.name = EQUIP_NAMES[item.slot][Math.min(getRealmIndex(newLv), EQUIP_NAMES[item.slot].length - 1)];
+    addLog(`🔥 温养${EQUIP_SLOT_NAMES[slot]}：Lv.${oldLv} → Lv.${newLv}`);
+    saveState();
+    emit('enhance', { item });
+    return { success: true, msg: `温养成功，${item.name} 提升至 Lv.${newLv}` };
+  }
+
   function enhanceEquip(slot) {
     const item = state.equipment[slot];
     if (!item) return { success: false, msg: '无装备' };
@@ -2429,12 +2479,12 @@ const GameEngine = (() => {
     start, stop, getState, resetState, processOfflineGains, formatNumber, ensureMonster,
     exportSave, importSave,
     // 装备
-    equipItem, unequipItem, sellItem, enhanceEquip, getEquipEnhanceCost, getEquipSellPrice, getEquipPowerDelta,
+    equipItem, unequipItem, sellItem, enhanceEquip, getEquipEnhanceCost, refineEquip, getRefineCost, getEquipSellPrice, getEquipPowerDelta,
     autoEquipBest, sellWeakerItems,
     // 丹药/功法/灵兽
     craftPill, usePill, getPillCost, PILL_RECIPES,
     upgradeSkill, maxUpgradeSkill, getSkillCost, SKILL_TREE,
-    feedBeast, maxFeedBeast, setActiveBeast, getBeastFeedCost, beastBonus, BEAST_TEMPLATES,
+    feedBeast, maxFeedBeast, setActiveBeast, getBeastFeedCost, beastBonus, BEAST_TEMPLATES, BEAST_GUARD_RATE,
     // 神通
     castSkill, toggleAutoCast, ACTIVE_SKILLS, AUTO_CAST_LEVEL,
     // 秘境/塔

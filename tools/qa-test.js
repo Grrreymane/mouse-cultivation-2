@@ -273,6 +273,41 @@ exerciseAll('Lv60');
   if (E.getState().slotEnhance.weapon !== 0) report('部位强化', `飞升后部位强化未重置（+${E.getState().slotEnhance.weapon}）`);
 }
 
+// ---------- 温养 ----------
+{
+  const G = E._debug.generateEquipment;
+  const old = G(20, 5, 'weapon');
+  cheat({ level: 35, gold: 1e15, materials: { herb: 0, ore: 1e4, essence: 1e4 }, equipment: { weapon: old, armor: null, accessory: null, boots: null } });
+  const p0 = E._debug.getPower();
+  const c = E.getRefineCost(E.getState().equipment.weapon);
+  if (!c) report('温养', '落后 15 级的装备没有温养费用');
+  const ore0 = E.getState().materials.ore, ess0 = E.getState().materials.essence;
+  const r = E.refineEquip('weapon');
+  const w = E.getState().equipment.weapon;
+  if (!r.success) report('温养', `资源充足仍失败：${r.msg}`);
+  else {
+    if (w.level !== 35) report('温养', `温养后等级 ${w.level}（应 35）`);
+    if (w.qualityIdx !== 5) report('温养', '温养改变了品质');
+    if (E.getState().materials.ore !== ore0 - c.ore || E.getState().materials.essence !== ess0 - c.essence) report('温养', '材料扣除不正确');
+    if (E._debug.getPower() <= p0) report('温养', '温养后战力没有提升');
+    const fresh = G(35, 5, 'weapon');
+    if (w.baseAttr.attack !== fresh.baseAttr.attack) report('温养', `温养后基础攻击 ${w.baseAttr.attack} ≠ 同级新装 ${fresh.baseAttr.attack}`);
+  }
+  if (E.refineEquip('weapon').success) report('温养', '已是当前等级仍可温养');
+  cheat({ materials: { herb: 0, ore: 0, essence: 0 }, equipment: { weapon: G(20, 5, 'weapon'), armor: null, accessory: null, boots: null } });
+  if (E.refineEquip('weapon').success) report('温养', '矿石为 0 仍可温养');
+  if (E.refineEquip('armor').success) report('温养', '空部位可以温养');
+}
+
+// ---------- 护法灵兽 ----------
+{
+  cheat({ level: 40, beasts: [{ id: 'a', templateId: 'fire_cat', level: 20 }], activeBeastId: 'a' });
+  const p1 = E._debug.getPower();
+  cheat({ beasts: [{ id: 'a', templateId: 'fire_cat', level: 20 }, { id: 'b', templateId: 'jade_dragon', level: 30 }], activeBeastId: 'a' });
+  const p2 = E._debug.getPower();
+  if (p2 <= p1) report('护法', `多一只护法灵兽战力没有提升（${p1} → ${p2}）`);
+}
+
 // ---------- 离线收益 ----------
 {
   cheat({ level: 20 });
