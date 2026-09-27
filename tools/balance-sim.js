@@ -56,6 +56,7 @@ function run() {
   let mAgg = { n: 0, hp: 0, atk: 0 };
   let levelStart = 0, deathsAtLevel = 0;
   const traceRows = [];
+  let lastBoss = false; const bossTries = {}; const bossLog = []; global.__bossTries = bossTries; global.__bossLog = bossLog;
   E.start((type, data) => {
     if (type === 'spawn' && data && data.monster && !data.monster.isElite) {
       mAgg.n++; mAgg.hp += data.monster.maxHp; mAgg.atk += data.monster.atk;
@@ -73,7 +74,10 @@ function run() {
       }
       levelStart = sim.now; deathsAtLevel = events.death; mAgg = { n: 0, hp: 0, atk: 0 };
     }
-    if (type === 'death') events.death++;
+    if (type === 'death') { events.death++; if (lastBoss) events.bossLoss = (events.bossLoss || 0) + 1; }
+    if (type === 'bossSpawn') { events.bossSpawn = (events.bossSpawn || 0) + 1; bossTries[data.monster.tier] = (bossTries[data.monster.tier] || 0) + 1; }
+    if (type === 'bossKill') { events.bossKill = (events.bossKill || 0) + 1; bossLog.push(`${data.monster.name}(第${bossTries[data.monster.tier]}次)`); }
+    if (type === 'spawn') lastBoss = !!(data && data.monster && data.monster.isBoss);
     if (type === 'breakthrough') events.trib++;
     if (type === 'tribulationFail') events.tribFail++;
     if (type === 'beastCapture') events.beast++;
@@ -120,6 +124,8 @@ function run() {
   }
   console.log('\n境界到达时间:');
   for (const [ri, t] of Object.entries(realmReached)) console.log(`  ${E.REALMS[ri].name}: ${fmtH(t)}`);
+  console.log(`
+守关妖王: 出现${events.bossSpawn || 0}次 击败${events.bossKill || 0} 败退${events.bossLoss || 0} | ${global.__bossLog.join(' ')}`);
   console.log(`\n最终: Lv.${s.level} ${s.realm} | 死亡${events.death} | 渡劫成功${events.trib} 失败${events.tribFail} | 灵兽${s.beasts.length} | 塔${s.towerBestFloor}层 | 转生${s.ascensionCount}`);
 }
 
@@ -142,7 +148,9 @@ function playerPolicy(E, sim, elapsed, towerDue) {
     if (s.realmIndex >= 2 && s.materials.essence > 6 && (s.pills.super_exp || 0) < 3) E.craftPill('super_exp', 1);
   }
   if ((s.pills.heal_pill || 0) < 3) E.craftPill('heal_pill');
-  if (s.needTribulation) {
+  // 守关妖王：先打（最多等它来 3 次），再渡劫
+  const waitBoss = !process.argv.includes('--skipboss') && s.bossPending && (global.__bossTries[s.realmIndex] || 0) < 3;
+  if (s.needTribulation && !waitBoss) {
     if ((s.pills.trib_pill || 0) < 1) E.craftPill('trib_pill');
     if (!(s.buffs.tribBoost && s.buffs.tribBoost.until > sim.now)) E.usePill('trib_pill');
     E.attemptTribulation();

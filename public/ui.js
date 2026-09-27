@@ -212,6 +212,8 @@ const UI = (() => {
       if (!(s.buffs.tribBoost && s.buffs.tribBoost.until > now)) tips.push((s.pills.trib_pill || 0) > 0 ? '💊 先服金元丹 +25%' : '💊 金元丹 +25%');
       if (!s.activeBeastId) tips.push('🐾 灵兽出战+5%');
       if (s.tribFailStreak > 0) tips.push(`道心+${s.tribFailStreak * 10}%`);
+      if (s.bossBlessing) tips.unshift(`👑 妖王印记 +${Math.round(GameEngine.BOSS.tribBonus * 100)}%`);
+      else if (s.bossPending) tips.unshift(s.bossRetryIn > 0 ? `👑 妖王 ${s.bossRetryIn}s 后再来` : `👑 先击败守关妖王 +${Math.round(GameEngine.BOSS.tribBonus * 100)}%`);
       $('tribTip').textContent = tips.join(' · ') || '准备就绪，放手一搏！';
     }
 
