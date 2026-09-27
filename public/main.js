@@ -157,7 +157,13 @@
       closeMenu();
       const code = GameEngine.exportSave();
       UI.modal({ title: '💾 导出存档', html: `<p class="muted small">复制下面的存档码妥善保存，可在其他设备导入。</p><textarea class="save-box" id="saveBox" readonly>${code}</textarea>`,
-        buttons: [{ text: '复制', cls: 'gold', action: () => { const t = document.getElementById('saveBox'); t.select(); try { navigator.clipboard.writeText(t.value); UI.toast('已复制到剪贴板', 'green'); } catch (e) { document.execCommand('copy'); } return false; } }, { text: '关闭' }],
+        buttons: [{ text: '复制', cls: 'gold', action: () => {
+          const t = document.getElementById('saveBox'); t.select();
+          const fallback = () => { let ok = false; try { ok = document.execCommand('copy'); } catch (e) {} UI.toast(ok ? '已复制到剪贴板' : '复制失败，请长按文本手动复制', ok ? 'green' : 'red'); };
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t.value).then(() => UI.toast('已复制到剪贴板', 'green'), fallback);
+          else fallback();
+          return false;
+        } }, { text: '关闭' }],
         onOpen: () => document.getElementById('saveBox').select() });
     },
     importSave: () => {

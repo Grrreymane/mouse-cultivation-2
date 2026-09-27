@@ -137,8 +137,8 @@
       <h1>🐭 鼠鼠修仙 · 迭代记录</h1>
       <p>每一个版本都是一次飞升 ✨</p>
       <div class="stats">
-        <div class="stat"><span class="stat-value">v3.4</span><span class="stat-label">当前版本</span></div>
-        <div class="stat"><span class="stat-value">36</span><span class="stat-label">版本迭代</span></div>
+        <div class="stat"><span class="stat-value">v3.4.1</span><span class="stat-label">当前版本</span></div>
+        <div class="stat"><span class="stat-value">37</span><span class="stat-label">版本迭代</span></div>
         <div class="stat"><span class="stat-value">~7000+</span><span class="stat-label">总代码行数</span></div>
         <div class="stat"><span class="stat-value">6天</span><span class="stat-label">开发周期</span></div>
       </div>
@@ -146,8 +146,28 @@
 
     <div class="timeline" id="timeline">
 
-      <!-- v3.4 -->
+      <!-- v3.4.1 -->
       <div class="version-card minor open">
+        <div class="version-header" onclick="toggleVersion(this)">
+          <span class="version-badge minor">v3.4.1</span>
+          <span class="version-title">全功能测试 · 修复</span>
+          <span class="version-date">2026-09-27</span>
+          <span class="version-toggle">▼</span>
+        </div>
+        <div class="version-body">
+          <div class="desc">新增自动化功能测试（逐项调用全部玩法 + 上万步随机操作），并逐个点击了界面上的每个按钮。</div>
+          <div class="feature-group">
+            <div class="feature-group-title">🐛 修复 <span class="tag tag-fix">修复</span></div>
+            <ul class="feature-list">
+              <li>换下装备或换成生命更低的装备后，当前生命可能超过上限（血条显示超过 100%）</li>
+              <li>导出存档点「复制」时，若浏览器不允许访问剪贴板（手机上常见），会报错并误提示「已复制」；现在失败时会提示手动长按复制</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- v3.4 -->
+      <div class="version-card minor">
         <div class="version-header" onclick="toggleVersion(this)">
           <span class="version-badge minor">v3.4</span>
           <span class="version-title">界面减负 · 战斗画面不再被遮挡 · 手机端优化</span>
