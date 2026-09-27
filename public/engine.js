@@ -206,9 +206,11 @@ const GameEngine = (() => {
     };
   }
 
+  // 强化等级属于部位（换装不丢失），费用按当前穿戴装备的等级/品质计算
+  function slotEnhanceLevel(slot) { return (state && state.slotEnhance && state.slotEnhance[slot]) || 0; }
   function getEquipEnhanceCost(equip) {
     if (!equip) return Infinity;
-    return Math.floor(12 * goldPerKill(equip.level || 1) * Math.pow(1.32, equip.enhanceLevel) * (1 + equip.qualityIdx * 0.3));
+    return Math.floor(18 * goldPerKill(equip.level || 1) * Math.pow(1.32, slotEnhanceLevel(equip.slot)) * (1 + equip.qualityIdx * 0.3));
   }
 
   function getEquipSellPrice(equip) {
@@ -384,7 +386,7 @@ const GameEngine = (() => {
     { id: 'q_realm', title: '秘境寻宝', desc: '在【秘境】页探索1次秘境', check: s => (s.stats.realmRuns || 0) >= 1, reward: { goldK: 20 }, rewardText: '灵石' },
     { id: 'q_tower5', title: '初探锁妖塔', desc: '锁妖塔通过第5层', check: s => s.towerBestFloor >= 5, progress: s => [s.towerBestFloor, 5], reward: { tokens: 5 }, rewardText: '天机令×5' },
     { id: 'q_gacha', title: '天机难测', desc: '在【天机阁】抽取1次', check: s => (s.totalGachaPulls || 0) >= 1, reward: { tokens: 10 }, rewardText: '天机令×10' },
-    { id: 'q_enh', title: '千锤百炼', desc: '将任意装备强化至+5', check: s => EQUIP_SLOTS.some(k => s.equipment[k] && s.equipment[k].enhanceLevel >= 5), reward: { goldK: 30 }, rewardText: '灵石' },
+    { id: 'q_enh', title: '千锤百炼', desc: '将任意部位强化至+5', check: s => EQUIP_SLOTS.some(k => s.slotEnhance && s.slotEnhance[k] >= 5), reward: { goldK: 30 }, rewardText: '灵石' },
     { id: 'q_trib2', title: '金丹大道', desc: '突破金丹期', check: s => s.level >= 20, reward: { tokens: 20, materials: { essence: 3 } }, rewardText: '天机令×20 + 精华×3' },
     { id: 'q_beast', title: '灵兽相伴', desc: '捕获一只灵兽（击杀妖兽时概率捕获）', check: s => s.beasts.length >= 1, reward: { goldK: 30 }, rewardText: '灵石' },
     { id: 'q_tower20', title: '镇妖之路', desc: '锁妖塔通过第20层', check: s => s.towerBestFloor >= 20, progress: s => [s.towerBestFloor, 20], reward: { tokens: 15 }, rewardText: '天机令×15' },
@@ -585,6 +587,7 @@ const GameEngine = (() => {
     return {
       saveVersion: SAVE_VERSION,
       level: 1, exp: 0, gold: 0,
+      slotEnhance: { weapon: 0, armor: 0, accessory: 0, boots: 0 },
       baseAttack: 5, baseDefense: 1, baseMaxHp: 100, hp: 100,
       baseCritRate: 5, baseCritDamage: 150,
       killCount: 0, totalGold: 0, totalExp: 0,
@@ -652,6 +655,7 @@ const GameEngine = (() => {
   function migrateState() {
     const def = getDefaultState();
     const oldVersion = state.saveVersion || 0;
+    const hadSlotEnhance = !!state.slotEnhance;
     for (const key of Object.keys(def)) {
       if (state[key] === undefined) state[key] = def[key];
     }
@@ -689,6 +693,12 @@ const GameEngine = (() => {
       state.currentMonster = null;
       state.needTribulation = state.needTribulation || false;
       state.saveVersion = SAVE_VERSION;
+    }
+    if (!hadSlotEnhance) {
+      state.slotEnhance = { weapon: 0, armor: 0, accessory: 0, boots: 0 };
+      const all = [...Object.values(state.equipment || {}), ...(state.inventory || [])].filter(Boolean);
+      for (const it of all) if (it.slot in state.slotEnhance) state.slotEnhance[it.slot] = Math.max(state.slotEnhance[it.slot], Math.min(15, it.enhanceLevel || 0));
+      for (const it of all) it.enhanceLevel = 0;
     }
     // 功法等级上限校正
     for (const sk of SKILL_TREE) if ((state.skills[sk.id] || 0) > sk.maxLevel) state.skills[sk.id] = sk.maxLevel;
@@ -766,7 +776,7 @@ const GameEngine = (() => {
     for (const slot of EQUIP_SLOTS) {
       const eq = equipOverride && slot in equipOverride ? equipOverride[slot] : state.equipment[slot];
       if (!eq) continue;
-      const mult = 1 + (eq.enhanceLevel || 0) * 0.08;
+      const mult = 1 + slotEnhanceLevel(slot) * 0.08;
       for (const [k, v] of Object.entries(eq.baseAttr || {})) {
         const scaled = ['attack', 'defense', 'maxHp'].includes(k) ? Math.floor(v * mult) : v;
         add(k, scaled, 'flat');
@@ -1988,16 +1998,17 @@ const GameEngine = (() => {
   function enhanceEquip(slot) {
     const item = state.equipment[slot];
     if (!item) return { success: false, msg: '无装备' };
-    if (item.enhanceLevel >= 15) return { success: false, msg: '已强化至+15' };
+    const lv = slotEnhanceLevel(slot);
+    if (lv >= 15) return { success: false, msg: '已强化至+15' };
     const cost = getEquipEnhanceCost(item);
     if (state.gold < cost) return { success: false, msg: `灵石不足（需要${formatNumber(cost)}）` };
     state.gold -= cost;
-    item.enhanceLevel++;
-    addLog(`✨ ${item.name} 强化至 +${item.enhanceLevel}`);
+    state.slotEnhance[slot] = lv + 1;
+    addLog(`✨ ${EQUIP_SLOT_NAMES[slot]}部位强化至 +${lv + 1}`);
     saveState();
     checkQuest();
     emit('enhance', { item });
-    return { success: true, msg: `强化成功 +${item.enhanceLevel}` };
+    return { success: true, msg: `${EQUIP_SLOT_NAMES[slot]}强化成功 +${lv + 1}` };
   }
 
   // ========== 丹药 ==========
@@ -2446,7 +2457,7 @@ const GameEngine = (() => {
     WEAPON_SKINS, ARMOR_SKINS,
     // 调试/模拟
     _debug: {
-      monsterBase, refBase, goldPerKill, baseExpPerKill, getPower, getComputedStats,
+      monsterBase, refBase, goldPerKill, baseExpPerKill, getPower, getComputedStats, generateEquipment,
       // 测试用：直接修改存档字段，例如 GameEngine._debug.cheat({ level: 25 })
       cheat(patch) {
         if (patch.level) { const ref = refBase(patch.level); state.baseAttack = ref.atk; state.baseDefense = ref.def; state.baseMaxHp = ref.hp; }

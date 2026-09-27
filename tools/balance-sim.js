@@ -68,7 +68,7 @@ function run() {
       if (type === 'breakthrough' || type === 'tribulationReady') {
         const sk = Object.values(st.skills).reduce((a, b) => a + b, 0);
         const cave = Object.values(st.cave).join('/');
-        const enh = ['weapon','armor','accessory','boots'].map(k => st.equipment[k] ? (st.equipment[k].quality + '+' + st.equipment[k].enhanceLevel) : '-').join(' ');
+        const enh = ['weapon','armor','accessory','boots'].map(k => st.equipment[k] ? (st.equipment[k].quality + '+' + ((st.slotEnhance || {})[k] || 0)) : '-').join(' ');
         traceRows.push(`      ↳ 功法总层${sk} 洞府${cave} 装备[${enh}] 灵兽${(st.beasts||[]).map(b=>b.level).join('/')} 塔${st.towerBestFloor} 灵石${E.formatNumber(st.gold)} 丹${JSON.stringify(st.pills)} 材料${JSON.stringify(st.materials)} 战力${E.formatNumber(st.power)}`);
       }
       levelStart = sim.now; deathsAtLevel = events.death; mAgg = { n: 0, hp: 0, atk: 0 };
@@ -166,7 +166,7 @@ function playerPolicy(E, sim, elapsed, towerDue) {
     }
     for (const slot of ['weapon', 'armor', 'accessory', 'boots']) {
       const eq = s.equipment[slot];
-      if (eq && eq.enhanceLevel < 15) options.push({ cost: E.getEquipEnhanceCost(eq) * 1.5, real: E.getEquipEnhanceCost(eq), act: () => E.enhanceEquip(slot) });
+      if (eq && ((E.getState().slotEnhance || {})[slot] || 0) < 15) options.push({ cost: E.getEquipEnhanceCost(eq) * 1.5, real: E.getEquipEnhanceCost(eq), act: () => E.enhanceEquip(slot) });
     }
     for (const b of E.CAVE_BUILDINGS) {
       const lv = s.cave[b.id] || 0;
