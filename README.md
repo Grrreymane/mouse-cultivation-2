@@ -1,5 +1,7 @@
 # 🐭 鼠鼠修仙 v3
 
+![鼠鼠修仙封面](docs/cover.png)
+
 > 像素风放置类修仙游戏 · 纯前端 · 零框架依赖
 
 **线上地址**: https://grrreymane.github.io/mouse-cultivation-2/
