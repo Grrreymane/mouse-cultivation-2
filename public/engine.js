@@ -725,6 +725,23 @@ const GameEngine = (() => {
 
   function saveState() {
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) { console.error('保存失败:', e); }
+    reportProgress();
+  }
+
+  // AI Made Games platform: inside the site's in-site player, report a one-line progress summary
+  // that shows as "your save" on the game page. Does nothing when the game runs anywhere else.
+  // Saves happen every combat tick, so this samples at most once every few seconds.
+  var platformEmbed = window.parent !== window, platformTimer = 0, platformLast = '';
+  function reportProgress() {
+    if (!platformEmbed || platformTimer) return;
+    platformTimer = setTimeout(() => {
+      platformTimer = 0;
+      if (!state) return;
+      const text = '鼠鼠已修到' + getRealm(state.level).name + ' Lv.' + state.level + ' · 斩妖 ' + state.killCount + ' 只';
+      if (text === platformLast) return;
+      platformLast = text;
+      try { window.parent.postMessage({ source: 'aimadegames', v: 1, type: 'progress', text: text }, '*'); } catch (e) {}
+    }, 3000);
   }
 
   function resetState() {
