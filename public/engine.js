@@ -740,7 +740,9 @@ const GameEngine = (() => {
       const text = '鼠鼠已修到' + getRealm(state.level).name + ' Lv.' + state.level + ' · 斩妖 ' + state.killCount + ' 只';
       if (text === platformLast) return;
       platformLast = text;
-      try { window.parent.postMessage({ source: 'aimadegames', v: 1, type: 'progress', text: text }, '*'); } catch (e) {}
+      // The platform's English edition ships a translation runtime; translate the line there too.
+      const shown = window.GameI18n ? window.GameI18n.translate(text) : text;
+      try { window.parent.postMessage({ source: 'aimadegames', v: 1, type: 'progress', text: shown.slice(0, 120) }, '*'); } catch (e) {}
     }, 3000);
   }
 
