@@ -81,6 +81,126 @@ const UI = (() => {
     modal({ title, html, buttons: [{ text: '取消' }, { text: okText || '确定', cls: okCls || 'gold', action: onOk }] });
   }
 
+
+  // ========== 引导：跳动的小手 + 「前往」 ==========
+  // 指向真正能推进目标的按钮：切到对应标签 → 滚到按钮 → 按钮发光 + 小手，点到按钮或 12 秒后消失
+  let guide = null;
+  function clearGuide() {
+    if (!guide) return;
+    if (guide.el) guide.el.classList.remove('guide-glow');
+    guide.hand.remove();
+    cancelAnimationFrame(guide.raf);
+    document.removeEventListener('click', guide.onClick, true);
+    guide = null;
+  }
+  function pickTarget(sel) {
+    const all = [...document.querySelectorAll(sel)].filter(e => e.offsetParent !== null);
+    return all.find(e => !e.disabled) || all[0] || null;
+  }
+  function pointTo(tab, sel) {
+    clearGuide();
+    if (tab && currentTab !== tab) switchTab(tab);
+    setTimeout(() => {
+      const el = pickTarget(sel);
+      if (!el) return;
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el.classList.add('guide-glow');
+      const hand = document.createElement('div');
+      hand.className = 'guide-hand';
+      hand.textContent = '👆';
+      document.body.appendChild(hand);
+      const t0 = performance.now();
+      const g = guide = { el, hand, raf: 0, onClick: null };
+      g.onClick = e => { if (el.contains(e.target)) setTimeout(clearGuide, 0); };
+      document.addEventListener('click', g.onClick, true);
+      const follow = () => {
+        if (guide !== g) return;
+        if (!document.body.contains(el) || performance.now() - t0 > 12000) { clearGuide(); return; }
+        const r = el.getBoundingClientRect();
+        const below = r.bottom + 44 < window.innerHeight;
+        hand.textContent = below ? '👆' : '👇';
+        hand.style.left = Math.round(r.left + r.width / 2 - 14) + 'px';
+        hand.style.top = Math.round(below ? r.bottom + 2 : r.top - 36) + 'px';
+        g.raf = requestAnimationFrame(follow);
+      };
+      follow();
+    }, 80);
+  }
+
+  // 修行指引每一步「去哪做」；没有的表示挂机自然完成
+  const QUEST_GO = {
+    q_equip: { tab: 'equip', sel: '#tabBody [data-action=autoEquip], #tabBody [data-action=equip]' },
+    q_cast: { sel: '#skillBar [data-action=cast]:not(.locked)' },
+    q_skill: { tab: 'skills', sel: '#tabBody [data-action=skillUp][data-id=basic_sword]' },
+    q_pill: { tab: 'pills', sel: '#tabBody [data-action=craft]' },
+    q_cave: { tab: 'cave', sel: '#tabBody [data-action=caveUp][data-id=herb_garden]' },
+    q_auto: { sel: '#skillBar [data-action=autoCast]' },
+    q_realm: { tab: 'realm', sel: '#tabBody [data-action=enterRealm]' },
+    q_tower5: { tab: 'realm', sel: '#tabBody [data-action=towerAuto]' },
+    q_tower20: { tab: 'realm', sel: '#tabBody [data-action=towerAuto]' },
+    q_gacha: { tab: 'gacha', sel: '#tabBody [data-action=pull1]' },
+    q_enh: { tab: 'equip', sel: '#tabBody [data-action=enhance]' },
+    q_ascend: { tab: 'ascend', sel: '#tabBody [data-action=ascend]' },
+  };
+  const TRIB_QUESTS = new Set(['q_lv9', 'q_trib1', 'q_trib2', 'q_trib3', 'q_trib4', 'q_trib5']);
+  function questGo(q, s) {
+    if (TRIB_QUESTS.has(q.id) && s.needTribulation) return { sel: '#tribBtn' };
+    if (q.id === 'q_cast' && !s.activeSkills.some(k => k.unlocked)) return null;
+    if (q.id === 'q_auto' && !s.autoCastUnlocked) return null;
+    if (q.id === 'q_enh' && !['weapon', 'armor', 'accessory', 'boots'].some(k => s.equipment[k])) return QUEST_GO.q_equip; // 先穿上才能强化
+    const go = QUEST_GO[q.id];
+    if (go && go.tab) { const t = TABS.find(x => x.id === go.tab); if (t && t.unlock && !t.unlock(s)) return null; }
+    return go || null;
+  }
+  function guideQuest() {
+    const s = GameEngine.getState();
+    const go = s.quest && questGo(s.quest, s);
+    if (go) pointTo(go.tab, go.sel);
+  }
+
+  // 变强指引：现在能花资源变强的地方，一键前往
+  function growthTips(s) {
+    const tips = [];
+    const add = (icon, text, tab, sel) => tips.push({ icon, text, tab, sel });
+    const open = id => { const t = TABS.find(x => x.id === id); return !t.unlock || t.unlock(s); };
+    const SL = ['weapon', 'armor', 'accessory', 'boots'];
+    if (open('equip') && s.inventory.some(it => GameEngine.getEquipPowerDelta(it) > 0)) add('⚔️', '背包里有更强的装备', 'equip', '#tabBody [data-action=autoEquip]');
+    const skN = GameEngine.SKILL_TREE.filter(sk => s.realmIndex >= sk.realm && (s.skills[sk.id] || 0) < sk.maxLevel && s.gold >= GameEngine.getSkillCost(sk.id)).length;
+    if (open('skills') && skN) add('📜', `${skN} 门功法可修炼`, 'skills', '#tabBody [data-action=skillUp]:not([disabled])');
+    const enhN = SL.filter(k => s.equipment[k] && ((s.slotEnhance || {})[k] || 0) < 15 && s.gold >= GameEngine.getEquipEnhanceCost(s.equipment[k])).length;
+    if (open('equip') && enhN) add('✨', `${enhN} 个部位可强化`, 'equip', '#tabBody [data-action=enhance]:not([disabled])');
+    if (SL.some(k => { const c = GameEngine.getRefineCost(s.equipment[k]); return c && s.gold >= c.gold && s.materials.ore >= c.ore && s.materials.essence >= c.essence; })) add('🔥', '装备可温养到当前等级', 'equip', '#tabBody [data-action=refine]:not([disabled])');
+    if (open('cave') && GameEngine.CAVE_BUILDINGS.some(b => s.level >= b.minLevel && (s.cave[b.id] || 0) < b.maxLevel && s.gold >= GameEngine.getCaveBuildingCost(b.id))) add('🏠', '洞府可建造/升级', 'cave', '#tabBody [data-action=caveUp]:not([disabled])');
+    if (open('beasts') && s.beasts.some(b => b.level < s.level + 5 && s.gold >= GameEngine.getBeastFeedCost(b.id))) add('🐾', '灵兽可喂养', 'beasts', '#tabBody [data-action=feed]:not([disabled])');
+    if (open('realm') && s.secretRealmCharges > 0) add('🏔️', `秘境还能探索 ${s.secretRealmCharges} 次`, 'realm', '#tabBody [data-action=enterRealm]:not([disabled])');
+    if (open('gacha') && s.tianjiTokens >= GameEngine.GACHA_COST_SINGLE) add('🎰', `天机令 ${s.tianjiTokens} 枚，可以抽卡`, 'gacha', '#tabBody [data-action=pull1]');
+    return tips;
+  }
+
+  // 新解锁的标签：「？？？」→ 发光 +「新」，打开过一次后消失
+  let seenTabs = null;
+  function loadSeenTabs(s) {
+    try { const v = localStorage.getItem('mc2_seenTabs'); if (v) { seenTabs = new Set(JSON.parse(v)); return; } } catch (e) {}
+    // 第一次运行（含老存档）：已经解锁的都算看过，避免满屏「新」
+    seenTabs = new Set(TABS.filter(t => !t.unlock || t.unlock(s)).map(t => t.id));
+    saveSeenTabs();
+  }
+  function saveSeenTabs() { try { localStorage.setItem('mc2_seenTabs', JSON.stringify([...seenTabs])); } catch (e) {} }
+
+  // 新存档的欢迎卡：三行图标，少字
+  function showWelcome() {
+    try { if (localStorage.getItem('mc2_welcomed')) return; localStorage.setItem('mc2_welcomed', '1'); } catch (e) {}
+    modal({
+      title: '🐭 欢迎来到鼠鼠修仙',
+      html: `<div class="welcome">
+        <div class="wl"><span>⚔️</span><b>鼠鼠会自己打怪变强</b></div>
+        <div class="wl"><span>📜</span><b>跟着「修行指引」，点「前往」</b></div>
+        <div class="wl"><span>⛈️</span><b>修为满了就渡劫突破</b></div>
+        <div class="muted small" style="text-align:center;margin-top:8px">关掉网页也会继续修炼</div></div>`,
+      buttons: [{ text: '开始修仙', cls: 'gold' }],
+    });
+  }
+
   // ========== 标签栏 ==========
   function initTabs() {
     $('tabs').innerHTML = TABS.map(t => `<button class="tab" data-action="tab" data-tab="${t.id}" id="tab-${t.id}"><span class="ti">${t.icon}</span><span>${t.name}</span></button>`).join('');
@@ -92,7 +212,7 @@ const UI = (() => {
     const lv = (hot, soft) => hot ? 'hot' : soft ? 'soft' : null;
     dots.equip = lv(s.inventory.some(it => GameEngine.getEquipPowerDelta(it) > 0), false);
     dots.skills = lv(false, GameEngine.SKILL_TREE.some(sk => s.realmIndex >= sk.realm && (s.skills[sk.id] || 0) < sk.maxLevel && s.gold >= GameEngine.getSkillCost(sk.id)));
-    dots.realm = lv(s.secretRealmCharges > 0 || (!s.towerDailyRewardClaimed && s.towerBestFloor > 0), false);
+    dots.realm = lv(s.secretRealmCharges > 0, false);
     dots.cave = lv(false, GameEngine.CAVE_BUILDINGS.some(b => s.level >= b.minLevel && (s.cave[b.id] || 0) < b.maxLevel && s.gold >= GameEngine.getCaveBuildingCost(b.id)));
     dots.gacha = lv(false, s.tianjiTokens >= GameEngine.GACHA_COST_SINGLE);
     dots.ascend = lv(!!s.pendingTalentList || s.canAscend, GameEngine.ASCENSION_UPGRADES.some(u => (s.ascensionBonuses[u.id] || 0) < u.maxLevel && s.ascensionPoints >= GameEngine.getAscensionUpgradeCost(u, s.ascensionBonuses[u.id] || 0)));
@@ -107,10 +227,20 @@ const UI = (() => {
       if (!el) continue;
       const unlocked = !t.unlock || t.unlock(s);
       el.classList.toggle('locked', !unlocked);
+      if (!seenTabs) loadSeenTabs(s);
+      const isNew = unlocked && !seenTabs.has(t.id) && currentTab !== t.id;
+      if (isNew && !el.classList.contains('new')) toast(`🔓 新功能【${t.name}】`, 'gold');
+      el.classList.toggle('new', isNew);
+      if (el.dataset.lbl !== String(unlocked)) {
+        const dot0 = el.querySelector('.dot');
+        el.innerHTML = unlocked ? `<span class="ti">${t.icon}</span><span>${t.name}</span>` : '<span class="ti">❔</span><span>？？？</span>';
+        if (dot0) el.appendChild(dot0);
+        el.dataset.lbl = String(unlocked);
+      }
       el.classList.toggle('active', currentTab === t.id);
       el.title = unlocked ? t.name : `${t.lock} 解锁`;
       let dot = el.querySelector('.dot');
-      const want = unlocked && dots[t.id] && currentTab !== t.id;
+      const want = unlocked && dots[t.id] && currentTab !== t.id && !isNew;
       if (want && !dot) { dot = document.createElement('i'); el.appendChild(dot); }
       if (want) dot.className = 'dot ' + dots[t.id];
       if (!want && dot) dot.remove();
@@ -123,6 +253,7 @@ const UI = (() => {
     if (!t) return;
     if (t.unlock && !t.unlock(s)) { toast(`【${t.name}】${t.lock} 解锁`, 'red'); Sound.play('error'); return; }
     currentTab = id;
+    if (seenTabs && !seenTabs.has(id)) { seenTabs.add(id); saveSeenTabs(); }
     $('tabBody').scrollTop = 0;
     // 手机端整页滚动：若已滚过标签栏，切换后回到新标签页顶部
     if (window.matchMedia('(max-width: 860px)').matches) {
@@ -252,15 +383,18 @@ const UI = (() => {
     el.classList.toggle('mini', mini);
     const pct = q.progressValue ? Math.min(100, q.progressValue[0] / q.progressValue[1] * 100) : 0;
     const prog = q.progressValue ? `<div class="q-prog"><i style="width:${pct}%"></i></div>` : '';
+    const go = !q.done && questGo(q, s);
+    const nudge = go && q.index < 10 ? ' nudge' : '';  // 前几步：小手在「前往」上跳
+    const goBtn = go ? `<button class="btn jade sm q-go${nudge}" data-action="guideQuest">前往 ›</button>` : '';
     if (mini) {
-      setHTML(el, `<button class="q-chip" data-action="toggleQuest" title="展开修行指引">📜 <b>${esc(q.title)}</b>${q.progressValue ? `<span class="q-chip-n">${Math.min(q.progressValue[0], q.progressValue[1])}/${q.progressValue[1]}</span>` : ''}<span class="q-caret">▾</span></button>`, 'quest');
+      setHTML(el, `<div class="q-chip-row"><button class="q-chip" data-action="toggleQuest" title="展开修行指引">📜 <b>${esc(q.title)}</b>${q.progressValue ? `<span class="q-chip-n">${Math.min(q.progressValue[0], q.progressValue[1])}/${q.progressValue[1]}</span>` : ''}<span class="q-caret">▾</span></button>${goBtn}</div>`, 'quest');
       return;
     }
     const html = `<div class="q-head">📜 修行指引<span class="q-idx">${q.index + 1}/${q.total}</span>${q.done ? '' : '<button class="q-min" data-action="toggleQuest" title="收起">▴</button>'}</div>
       <div class="q-title">${q.title}</div>
       <div class="q-desc">${q.desc}${q.progressValue ? `（${Math.min(q.progressValue[0], q.progressValue[1])}/${q.progressValue[1]}）` : ''}</div>
       ${prog}
-      <div class="q-foot">🎁 ${q.rewardText}${q.done ? '<button class="btn gold sm" data-action="claimQuest">领取</button>' : ''}</div>`;
+      <div class="q-foot">🎁 ${q.rewardText}${q.done ? '<button class="btn gold sm" data-action="claimQuest">领取</button>' : goBtn || '<span class="q-idle">⏳ 挂机即可</span>'}</div>`;
     setHTML(el, html, 'quest');
   }
 
@@ -335,6 +469,12 @@ const UI = (() => {
     return `<button class="btn sm ${ok ? 'jade' : ''}" data-action="refine" data-slot="${slot}" ${ok ? '' : 'disabled'} title="温养：提升到 Lv.${s.level}，品质和词条保留（${fmt(c.gold)} 灵石 · 矿石${c.ore}${c.essence ? ' · 精华' + c.essence : ''}）">温养→Lv.${s.level}<span class="cost">${fmt(c.gold)} ${mats}</span></button>`;
   }
 
+  function growthSection(s) {
+    const tips = growthTips(s);
+    const rows = tips.slice(0, 5).map(t => `<div class="card row grow-tip"><span class="gt-ico">${t.icon}</span><span class="grow small">${t.text}</span><button class="btn sm jade" data-action="guideGo" data-tab="${t.tab}" data-sel="${esc(t.sel)}">前往 ›</button></div>`).join('');
+    return `<div class="sec"><div class="sec-title">变强指引</div>${rows || '<div class="hint">暂时没有能提升的地方，挂机攒灵石吧 ⏳</div>'}</div>`;
+  }
+
   const RENDER = {
     status(s) {
       const c = s.computed;
@@ -351,6 +491,7 @@ const UI = (() => {
           ${t ? `<div class="small t-gold" style="margin-top:4px">${t.icon} 前世天赋·${t.name}：<span class="muted">${t.desc}</span></div>` : ''}
         </div>
       </div>
+      ${growthSection(s)}
       <div class="sec"><div class="sec-title">属性</div>
         <div class="stat-grid">${statRows(c).filter(r => r[0]).map(([k, v, cls]) => `<div class="stat"><span>${k}</span><b class="${cls}">${v}</b></div>`).join('')}</div>
         <div class="muted small" style="margin-top:6px">🐎 坐骑：${mountTxt}</div>
@@ -559,7 +700,6 @@ const UI = (() => {
           <div class="row" style="gap:6px;margin-bottom:8px">
             <button class="btn gold grow" data-action="towerOne">⚔️ 挑战一层</button>
             <button class="btn purple grow" data-action="towerAuto">🔥 连续闯塔</button>
-            <button class="btn grow" data-action="towerSweep" ${s.towerDailyRewardClaimed || !s.towerBestFloor ? 'disabled' : ''}>🧹 ${s.towerDailyRewardClaimed ? '今日已扫荡' : '每日扫荡'}</button>
           </div>
           <div class="card">${msList}</div>
         </div>`;
@@ -746,6 +886,6 @@ const UI = (() => {
 
   return {
     initTabs, update, renderTab, toast, modal, closeModal, modalButton, confirmBox,
-    setTab, setCodexSub, setSkinFilter, setLastPulls, getCurrentTab, flashSkill, toggleLog, toggleQuest, drawMouseTo, showTalentChoice,
+    setTab, setCodexSub, setSkinFilter, setLastPulls, getCurrentTab, flashSkill, toggleLog, toggleQuest, guideQuest, pointTo, clearGuide, showWelcome, drawMouseTo, showTalentChoice,
   };
 })();

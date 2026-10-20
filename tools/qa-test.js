@@ -160,8 +160,6 @@ function exerciseAll(label) {
   for (let i = -1; i <= E.SECRET_REALMS.length; i++) call(`${label} realm ${i}`, () => E.enterSecretRealm(i));
   call(label + ' towerOne', () => E.challengeTower());
   call(label + ' towerAuto', () => E.autoChallengeTower());
-  call(label + ' towerSweep', () => E.sweepTower());
-  call(label + ' towerSweep2', () => E.sweepTower());
   // 天机阁
   call(label + ' pull1', () => E.doGachaPull(1));
   call(label + ' pull10', () => E.doGachaPull(10));
@@ -421,12 +419,6 @@ exerciseAll('Lv60');
       if (r.success && S().gold >= g0) report('强化', '强化成功但没扣灵石');
     }
   }
-  // 锁妖塔扫荡：每日一次
-  {
-    for (let i = 0; i < 5; i++) E.challengeTower();
-    const a1 = E.sweepTower(), a2 = E.sweepTower();
-    if (a1.success && a2.success) report('锁妖塔', '同一天可以重复扫荡');
-  }
   // 秘境：次数扣减
   {
     cheat({ secretRealmCharges: 2 });
@@ -467,7 +459,6 @@ const ACTIONS = [
   () => E.enterSecretRealm(Math.floor(rnd() * E.SECRET_REALMS.length)),
   () => E.challengeTower(),
   () => E.autoChallengeTower(),
-  () => E.sweepTower(),
   () => E.doGachaPull(pick([1, 10])),
   () => E.claimQuest(),
   () => E.attemptTribulation(),

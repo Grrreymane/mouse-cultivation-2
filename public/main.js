@@ -27,6 +27,8 @@
     closeMenu: (el, e) => { if (e.target === el) el.classList.remove('on'); },
     toggleLog: () => UI.toggleLog(),
     toggleQuest: () => UI.toggleQuest(),
+    guideQuest: () => UI.guideQuest(),
+    guideGo: el => UI.pointTo(el.dataset.tab, el.dataset.sel),
     modalBtn: el => UI.modalButton(+el.dataset.i),
 
     cast: el => {
@@ -108,7 +110,6 @@
       UI.modal({ title: '🗼 锁妖塔 · 连续闯塔', html: `<div style="text-align:center">${r.msg}</div>` });
       refresh();
     },
-    towerSweep: () => { const r = GameEngine.sweepTower(); if (r.success) Sound.play('coin'); result(r, null, 'gold'); },
 
     // 天机阁
     pull1: () => doPull(1),
@@ -331,7 +332,7 @@
     setInterval(() => UI.update(false), 250);
     if (offline && offline.offlineSeconds >= 60) showOffline(offline);
     else if (GameEngine.getState().pendingTalentList) setTimeout(() => UI.showTalentChoice(), 300);
-    else if (GameEngine.getState().killCount === 0) setTimeout(showHelp, 400);
+    else if (GameEngine.getState().killCount === 0) setTimeout(() => UI.showWelcome(), 400);
     window.addEventListener('resize', () => setTimeout(() => Renderer.resize(), 30));
   }
   boot();

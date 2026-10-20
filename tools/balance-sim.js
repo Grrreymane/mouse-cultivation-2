@@ -161,7 +161,7 @@ function playerPolicy(E, sim, elapsed, towerDue) {
     const idx = E.SECRET_REALMS.reduce((best, r, i) => (s.realmIndex >= r.minRealm ? i : best), 0);
     E.enterSecretRealm(idx);
   }
-  if (!process.argv.includes('--notower') && towerDue()) { E.autoChallengeTower(); E.sweepTower(); }
+  if (!process.argv.includes('--notower') && towerDue()) { E.autoChallengeTower(); }
 
   // 贪心花钱：每次买最便宜的可购项
   for (let guard = 0; guard < 300; guard++) {

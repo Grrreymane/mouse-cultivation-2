@@ -394,7 +394,7 @@ const Renderer = (() => {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
     let sx = 0, sy = 0;
-    if (shake > 0) { sx = Math.round((Math.random() - 0.5) * shake) * PX; sy = Math.round((Math.random() - 0.5) * shake) * PX; shake *= 0.85; if (shake < 0.3) shake = 0; }
+    shake = 0; // 不晃屏（玩家反馈头晕）：保留变量，效果关闭
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(world, sx * DPR, sy * DPR, W * PX * DPR, H * PX * DPR);
   }
@@ -521,7 +521,7 @@ const Renderer = (() => {
 
     // 全屏闪光
     if (flash > 0) {
-      wctx.globalAlpha = Math.min(1, flash); wctx.fillStyle = flashColor; wctx.fillRect(0, 0, W, H); wctx.globalAlpha = 1;
+      wctx.globalAlpha = Math.min(0.3, flash * 0.4); wctx.fillStyle = flashColor; wctx.fillRect(0, 0, W, H); wctx.globalAlpha = 1; // 大面积闪白要弱
       flash -= 0.06;
     }
 

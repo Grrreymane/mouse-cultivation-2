@@ -401,7 +401,7 @@ const GameEngine = (() => {
     { id: 'q_lv9', title: '炼气圆满', desc: '达到9级，准备渡劫', check: s => s.level >= 9, progress: s => [s.level, 9], reward: { pills: { trib_pill: 1 } }, rewardText: '金元丹×1' },
     { id: 'q_trib1', title: '筑基！', desc: '渡过天劫，突破筑基期', check: s => s.level >= 10, reward: { tokens: 10, goldK: 10 }, rewardText: '天机令×10 + 灵石' },
     { id: 'q_auto', title: '心随意动', desc: '开启神通【自动施放】', check: s => !!s.autoCast, reward: { goldK: 15 }, rewardText: '灵石' },
-    { id: 'q_realm', title: '秘境寻宝', desc: '在【秘境】页探索1次秘境', check: s => (s.stats.realmRuns || 0) >= 1, reward: { goldK: 20 }, rewardText: '灵石' },
+    { id: 'q_realm', title: '秘境寻宝', desc: '在【历练】页探索1次秘境', check: s => (s.stats.realmRuns || 0) >= 1, reward: { goldK: 20 }, rewardText: '灵石' },
     { id: 'q_tower5', title: '初探锁妖塔', desc: '锁妖塔通过第5层', check: s => s.towerBestFloor >= 5, progress: s => [s.towerBestFloor, 5], reward: { tokens: 5 }, rewardText: '天机令×5' },
     { id: 'q_gacha', title: '天机难测', desc: '在【天机阁】抽取1次', check: s => (s.totalGachaPulls || 0) >= 1, reward: { tokens: 10 }, rewardText: '天机令×10' },
     { id: 'q_enh', title: '千锤百炼', desc: '将任意部位强化至+5', check: s => EQUIP_SLOTS.some(k => s.slotEnhance && s.slotEnhance[k] >= 5), reward: { goldK: 30 }, rewardText: '灵石' },
@@ -1251,7 +1251,6 @@ const GameEngine = (() => {
     cleanExpiredBuffs();
     refreshRealmCharges();
     processCaveProduction();
-    checkAndRefreshDaily();
     updateFortune(now);
     autoUsePills();
 
@@ -1889,26 +1888,6 @@ const GameEngine = (() => {
     return { success: floorsCleared > 0, floorsCleared, totalGold, totalExp, milestones, msg };
   }
 
-  function sweepTower() {
-    if (state.towerBestFloor <= 0) return { success: false, msg: '尚未通关任何层' };
-    if (state.towerDailyRewardClaimed) return { success: false, msg: '今日已扫荡，明日再来' };
-    const floors = state.towerBestFloor;
-    const L = towerLevel(floors);
-    const goldReward = Math.floor(goldPerKill(L) * (20 + floors * 0.8));
-    const expReward = Math.floor(getExpToNextLevel(state.level) * 0.3);
-    const herbs = Math.floor(floors / 5) + 2, ores = Math.floor(floors / 8) + 1, tokens = Math.floor(floors / 10) + 1;
-    state.gold += goldReward; state.totalGold += goldReward;
-    gainExp(expReward);
-    state.materials.herb += herbs; state.materials.ore += ores;
-    state.tianjiTokens += tokens;
-    state.towerDailyRewardClaimed = true;
-    checkLevelUp();
-    const msg = `扫荡${floors}层：+${formatNumber(goldReward)}灵石 +${formatNumber(expReward)}修为 +${herbs}灵药 +${ores}矿石 +${tokens}天机令`;
-    addLog(`🗼 ${msg}`);
-    saveState();
-    return { success: true, msg };
-  }
-
   // ========== 转生（飞升）==========
   function getAscensionPointsEarned() {
     let points = Math.floor(state.level / 10);
@@ -2282,14 +2261,6 @@ const GameEngine = (() => {
   }
 
   // ========== 天机阁 ==========
-  function checkAndRefreshDaily() {
-    const d = new Date(Date.now());
-    const today = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
-    if (state.dailyKey === today) return;
-    state.dailyKey = today;
-    state.towerDailyRewardClaimed = false;
-  }
-
   function rollGachaQuality(guaranteed) {
     const roll = Math.random();
     let cum = 0;
@@ -2490,7 +2461,6 @@ const GameEngine = (() => {
   function start(eventCallback) {
     onBattleEvent = eventCallback;
     loadState();
-    checkAndRefreshDaily();
     TICK_INTERVAL = BASE_TICK / (state.battleSpeed || 1);
     if (!state.combatStartTime) state.combatStartTime = Date.now();
     saveState();
@@ -2559,7 +2529,7 @@ const GameEngine = (() => {
     castSkill, toggleAutoCast, ACTIVE_SKILLS, AUTO_CAST_LEVEL,
     // 秘境/塔
     enterSecretRealm, SECRET_REALMS,
-    challengeTower, autoChallengeTower, sweepTower, getTowerMonster, TOWER_MILESTONES, describeMilestone,
+    challengeTower, autoChallengeTower, getTowerMonster, TOWER_MILESTONES, describeMilestone,
     // 渡劫/设置
     attemptTribulation, setBattleSpeed, toggleAutoHeal, setAutoHealThreshold,
     claimFortune, FORTUNES, FORTUNE_LIFE, setAutoEquip, setAutoSellQuality, setAutoPill, AUTO_PILL_LEVEL, chooseTalent,
