@@ -143,8 +143,15 @@ const UI = (() => {
     q_ascend: { tab: 'ascend', sel: '#tabBody [data-action=ascend]' },
   };
   const TRIB_QUESTS = new Set(['q_lv9', 'q_trib1', 'q_trib2', 'q_trib3', 'q_trib4', 'q_trib5']);
+  // 本境界里还有已解锁、更深的地图？
+  function deeperZone(s) {
+    const zi = s.zoneInfo;
+    const n = s.zoneList.find(z => z.unlocked && z.realm === zi.realm && z.z > zi.z);
+    return n || null;
+  }
   function questGo(q, s) {
     if (TRIB_QUESTS.has(q.id) && s.needTribulation) return { sel: '#tribBtn' };
+    if (!QUEST_GO[q.id] && deeperZone(s)) return { sel: '#hudZone .znext' };  // 升级类：去更深的地图更快
     if (q.id === 'q_cast' && !s.activeSkills.some(k => k.unlocked)) return null;
     if (q.id === 'q_auto' && !s.autoCastUnlocked) return null;
     if (q.id === 'q_enh' && !['weapon', 'armor', 'accessory', 'boots'].some(k => s.equipment[k])) return QUEST_GO.q_equip; // 先穿上才能强化
@@ -164,6 +171,9 @@ const UI = (() => {
     const add = (icon, text, tab, sel) => tips.push({ icon, text, tab, sel });
     const open = id => { const t = TABS.find(x => x.id === id); return !t.unlock || t.unlock(s); };
     const SL = ['weapon', 'armor', 'accessory', 'boots'];
+    if (s.bossPending) add('👑', s.zoneInfo.tier === 2 ? '守关妖王就在深处，打赢才能渡劫' : '去深处挑战守关妖王', null, '#tribBtn');
+    const dz = deeperZone(s);
+    if (dz && !s.autoPush) add('🗺️', `可以去【${dz.name}】，收益更高`, null, '#hudZone .znext');
     if (open('equip') && s.inventory.some(it => GameEngine.getEquipPowerDelta(it) > 0)) add('⚔️', '背包里有更强的装备', 'equip', '#tabBody [data-action=autoEquip]');
     const skN = GameEngine.SKILL_TREE.filter(sk => s.realmIndex >= sk.realm && (s.skills[sk.id] || 0) < sk.maxLevel && s.gold >= GameEngine.getSkillCost(sk.id)).length;
     if (open('skills') && skN) add('📜', `${skN} 门功法可修炼`, 'skills', '#tabBody [data-action=skillUp]:not([disabled])');
@@ -187,6 +197,31 @@ const UI = (() => {
   }
   function saveSeenTabs() { try { localStorage.setItem('mc2_seenTabs', JSON.stringify([...seenTabs])); } catch (e) {} }
 
+  // 一次性提示：新玩法第一次出现时说一句、指一下
+  function tipOnce(key, fn) {
+    let seen = {};
+    try { seen = JSON.parse(localStorage.getItem('mc2_tips') || '{}'); } catch (e) {}
+    if (seen[key]) return;
+    seen[key] = 1;
+    try { localStorage.setItem('mc2_tips', JSON.stringify(seen)); } catch (e) {}
+    setTimeout(fn, 600);
+  }
+  function onGuideEvent(type, data) {
+    const s = GameEngine.getState();
+    if (type === 'zoneUnlock') tipOnce('zone', () => {
+      if (s.autoPush) toast('🗺️ 开着「自动」，打得过会自己往深处走', 'gold');
+      else { toast('🗺️ 点 ▶ 去更深的地图，收益更高', 'gold'); pointTo(null, '#hudZone .znext'); }
+    });
+    if (type === 'zoneMove' && !data.up) tipOnce('retreat', () => {
+      toast('🗺️ 打不过会自动退回，变强了再来', 'gold');
+      pointTo('status', '#tabBody .grow-tip .btn');
+    });
+    if (type === 'tribulationReady') tipOnce('boss', () => {
+      toast('👑 渡劫前要先打赢深处的守关妖王', 'gold');
+      pointTo(null, '#tribBtn');
+    });
+  }
+
   // 新存档的欢迎卡：三行图标，少字
   function showWelcome() {
     try { if (localStorage.getItem('mc2_welcomed')) return; localStorage.setItem('mc2_welcomed', '1'); } catch (e) {}
@@ -195,7 +230,8 @@ const UI = (() => {
       html: `<div class="welcome">
         <div class="wl"><span>⚔️</span><b>鼠鼠会自己打怪变强</b></div>
         <div class="wl"><span>📜</span><b>跟着「修行指引」，点「前往」</b></div>
-        <div class="wl"><span>⛈️</span><b>修为满了就渡劫突破</b></div>
+        <div class="wl"><span>🗺️</span><b>打不过会退回，变强再深入</b></div>
+        <div class="wl"><span>⛈️</span><b>打赢深处的妖王才能渡劫</b></div>
         <div class="muted small" style="text-align:center;margin-top:8px">关掉网页也会继续修炼</div></div>`,
       buttons: [{ text: '开始修仙', cls: 'gold' }],
     });
@@ -370,7 +406,7 @@ const UI = (() => {
     const tierCls = ['t0', 't1', 't2'][zi.tier];
     const html = `<button class="zb" data-action="zoneGo" data-z="${prev ? prev.z : ''}" ${prev ? '' : 'disabled'} title="${prev ? prev.name : ''}">◀</button>
       <span class="zn ${tierCls}">${zi.name}<small>Lv.${zi.level}</small></span>${lockTip}
-      <button class="zb" data-action="zoneGo" data-z="${next ? next.z : ''}" ${next ? '' : 'disabled'} title="${next ? next.name : ''}">▶</button>
+      <button class="zb znext" data-action="zoneGo" data-z="${next ? next.z : ''}" ${next ? '' : 'disabled'} title="${next ? next.name : ''}">▶</button>
       <button class="zauto ${s.autoPush ? 'on' : ''}" data-action="autoPush" title="打得过自动深入，阵亡自动退回">${s.autoPush ? '自动' : '手动'}</button>`;
     setHTML($('hudZone'), html, 'zone');
   }
@@ -510,7 +546,7 @@ const UI = (() => {
 
   function growthSection(s) {
     const tips = growthTips(s);
-    const rows = tips.slice(0, 5).map(t => `<div class="card row grow-tip"><span class="gt-ico">${t.icon}</span><span class="grow small">${t.text}</span><button class="btn sm jade" data-action="guideGo" data-tab="${t.tab}" data-sel="${esc(t.sel)}">前往 ›</button></div>`).join('');
+    const rows = tips.slice(0, 5).map(t => `<div class="card row grow-tip"><span class="gt-ico">${t.icon}</span><span class="grow small">${t.text}</span><button class="btn sm jade" data-action="guideGo" data-tab="${t.tab || ''}" data-sel="${esc(t.sel)}">前往 ›</button></div>`).join('');
     return `<div class="sec"><div class="sec-title">变强指引</div>${rows || '<div class="hint">暂时没有能提升的地方，挂机攒灵石吧 ⏳</div>'}</div>`;
   }
 
@@ -956,6 +992,6 @@ const UI = (() => {
 
   return {
     initTabs, update, renderTab, toast, modal, closeModal, modalButton, confirmBox,
-    setTab, setCodexSub, setSkinFilter, setLastPulls, getCurrentTab, flashSkill, toggleLog, toggleQuest, guideQuest, pointTo, clearGuide, showWelcome, drawMouseTo, showTalentChoice,
+    setTab, setCodexSub, setSkinFilter, setLastPulls, getCurrentTab, flashSkill, toggleLog, toggleQuest, guideQuest, pointTo, onGuideEvent, clearGuide, showWelcome, drawMouseTo, showTalentChoice,
   };
 })();

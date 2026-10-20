@@ -28,7 +28,7 @@
     toggleLog: () => UI.toggleLog(),
     toggleQuest: () => UI.toggleQuest(),
     guideQuest: () => UI.guideQuest(),
-    guideGo: el => UI.pointTo(el.dataset.tab, el.dataset.sel),
+    guideGo: el => UI.pointTo(el.dataset.tab || null, el.dataset.sel),
     modalBtn: el => UI.modalButton(+el.dataset.i),
 
     cast: el => {
@@ -263,6 +263,7 @@
   let lastSoundHit = 0;
   function onBattleEvent(type, data) {
     Renderer.handleEvent(type, data);
+    UI.onGuideEvent(type, data);
     const now = performance.now();
     switch (type) {
       case 'attack':
