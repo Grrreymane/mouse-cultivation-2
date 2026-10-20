@@ -431,6 +431,23 @@ exerciseAll('Lv60');
   if (S().zoneInfo.realm !== 2 || S().zoneInfo.level > 27) report('地图', `老存档迁移地图不对：${S().zoneInfo.name} Lv${S().zoneInfo.level}`);
 }
 
+// ---------- 装备图鉴 / 分层加成 ----------
+{
+  const S = () => E.getState();
+  cheat({ level: 30, equipCodex: {} });
+  const d0 = S().daoxing.parts.equip;
+  E._debug.generateEquipment(30, 5, 'weapon'); E._debug.generateEquipment(30, 5, 'weapon'); E._debug.generateEquipment(5, 0, 'boots');
+  const d1 = S().daoxing.parts.equip;
+  if (d1 - d0 !== 2 * E.DAO.equip) report('装备图鉴', `新增 2 种装备，道行 ${d0} → ${d1}`);
+  cheat({ level: 60 }); E.performAscension();
+  if (S().daoxing.parts.equip < 2 * E.DAO.equip) report('装备图鉴', '飞升后装备图鉴丢失');
+  // 攻击 = 基础(含装备固定值) × 各层乘积：用「去掉一层」验证乘法
+  cheat({ level: 40, skills: { basic_sword: 10 }, beasts: [{ id: 'q', templateId: 'jade_dragon', level: 20 }], activeBeastId: 'q' });
+  const c = S().computed, Ls = c.layers;
+  const prod = Object.values(Ls).reduce((a, l) => a * l.attack, 1);
+  if (!(prod > Ls.skill.attack + Ls.beast.attack - 1)) report('分层加成', `层与层没有相乘（乘积 ${prod.toFixed(2)}）`);
+}
+
 // ---------- 离线收益 ----------
 {
   cheat({ level: 20 });

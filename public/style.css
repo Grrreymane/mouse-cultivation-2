@@ -462,3 +462,15 @@ textarea.save-box { width: 100%; height: 110px; background: #0d0b13; color: var(
   .hud-zone { top: 92px; left: auto; right: 6px; transform: none; padding: 2px 3px; }
   .hud-zone .zn { font-size: 11px; }
 }
+.layer-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 8px; }
+.lchip { font-size: 11px; padding: 1px 7px; border-radius: 10px; background: rgba(255,210,74,.08); border: 1px solid rgba(255,210,74,.18); color: var(--dim); }
+.lchip b { color: var(--gold-2); font-variant-numeric: tabular-nums; }
+
+/* 装备图鉴 */
+.eq-codex { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.eqc { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 7px; }
+.eqc.unknown { opacity: .5; }
+.eqc-n { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.eqc-dots { display: flex; gap: 3px; margin-top: 4px; }
+.eqc-dots i { width: 9px; height: 9px; border-radius: 2px; background: #0d0b13; border: 1px solid color-mix(in srgb, var(--qc) 45%, transparent); }
+.eqc-dots i.on { background: var(--qc); border-color: var(--qc); box-shadow: 0 0 4px color-mix(in srgb, var(--qc) 60%, transparent); }

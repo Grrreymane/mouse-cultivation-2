@@ -488,6 +488,14 @@ const UI = (() => {
     return `<button class="btn sm ${ok ? 'jade' : ''}" data-action="refine" data-slot="${slot}" ${ok ? '' : 'disabled'} title="温养：提升到 Lv.${s.level}，品质和词条保留（${fmt(c.gold)} 灵石 · 矿石${c.ore}${c.essence ? ' · 精华' + c.essence : ''}）">温养→Lv.${s.level}<span class="cost">${fmt(c.gold)} ${mats}</span></button>`;
   }
 
+  // 攻击 = 基础 × 每一层加成（层与层相乘）
+  function layerRow(c) {
+    if (!c.layers) return '';
+    const parts = GameEngine.STAT_LAYERS.map(l => ({ n: l.name, a: c.layers[l.id].attack, h: c.layers[l.id].maxHp })).filter(p => p.a > 1.0049 || p.h > 1.0049);
+    if (!parts.length) return '';
+    return `<div class="layer-row"><span class="muted small">攻击 = 基础</span>${parts.map(p => `<span class="lchip">× ${p.n} <b>${p.a.toFixed(2)}</b></span>`).join('')}</div>`;
+  }
+
   function daoSection(s) {
     const d = s.daoxing;
     const p = d.parts;
@@ -496,7 +504,7 @@ const UI = (() => {
       <div class="card dao-card">
         <div class="row"><span class="dao-num">${d.total}</span><span class="grow small">攻击、生命 <b class="t-jade">+${d.pct}%</b></span>
           <button class="btn sm" data-action="guideGo" data-tab="codex" data-sel="#tabBody [data-action=codexSub][data-f=mon]">图鉴 ›</button></div>
-        <div class="dao-chips">${chip('🏅', '图鉴勋章', p.medal)}${chip('🐾', '灵兽', p.beast)}${chip('🎨', '外观', p.skin)}${chip('👑', '妖王首杀', p.boss)}${chip('📜', '修行指引', p.quest)}</div>
+        <div class="dao-chips">${chip('🏅', '图鉴勋章', p.medal)}${chip('🐾', '灵兽', p.beast)}${chip('🎨', '外观', p.skin)}${chip('👑', '妖王首杀', p.boss)}${chip('📜', '修行指引', p.quest)}${chip('⚔️', '装备图鉴', p.equip)}</div>
       </div></div>`;
   }
 
@@ -526,6 +534,7 @@ const UI = (() => {
       ${growthSection(s)}
       <div class="sec"><div class="sec-title">属性</div>
         <div class="stat-grid">${statRows(c).filter(r => r[0]).map(([k, v, cls]) => `<div class="stat"><span>${k}</span><b class="${cls}">${v}</b></div>`).join('')}</div>
+        ${layerRow(c)}
         <div class="muted small" style="margin-top:6px">🐎 坐骑：${mountTxt}</div>
       </div>
       <div class="sec"><div class="sec-title">自动服药</div>
@@ -826,7 +835,7 @@ const UI = (() => {
     },
 
     codex(s) {
-      const sub = `<div class="subtabs"><button class="${codexSub === 'ach' ? 'active' : ''}" data-action="codexSub" data-f="ach">🏆 成就</button><button class="${codexSub === 'mon' ? 'active' : ''}" data-action="codexSub" data-f="mon">👹 妖兽图鉴</button></div>`;
+      const sub = `<div class="subtabs"><button class="${codexSub === 'ach' ? 'active' : ''}" data-action="codexSub" data-f="ach">🏆 成就</button><button class="${codexSub === 'mon' ? 'active' : ''}" data-action="codexSub" data-f="mon">👹 妖兽图鉴</button><button class="${codexSub === 'equip' ? 'active' : ''}" data-action="codexSub" data-f="equip">⚔️ 装备图鉴</button></div>`;
       if (codexSub === 'ach') {
         const done = GameEngine.ACHIEVEMENTS.filter(a => s.achievements[a.id]).length;
         return sub + `<div class="sec-title">成就<span class="extra">${done}/${GameEngine.ACHIEVEMENTS.length} · 奖励永久生效</span></div>` +
@@ -835,6 +844,7 @@ const UI = (() => {
             return `<div class="ach ${d ? 'done' : ''}"><div class="ai">${a.icon}</div><div class="grow"><b>${a.name}</b> ${d ? '✅' : ''}<div class="muted small">${a.desc}</div></div><div class="small ${d ? 't-jade' : 'muted'}">${GameEngine.describeReward(a.reward)}</div></div>`;
           }).join('');
       }
+      if (codexSub === 'equip') return sub + equipCodexHtml(s);
       const list = GameEngine.getMonsterBestiary();
       const found = list.filter(m => m.discovered).length;
       let html = sub + `<div class="sec-title">妖兽图鉴<span class="extra">${found}/${list.length} · 点击查看</span></div>`;
@@ -849,6 +859,23 @@ const UI = (() => {
       return html;
     },
   };
+
+  // 装备图鉴：每件装备 × 每种品质，拿到过就点亮，每格 +1 道行（飞升不丢）
+  function equipCodexHtml(s) {
+    const got = s.equipCodex || {};
+    const Q = GameEngine.EQUIP_QUALITIES;
+    const total = Object.keys(GameEngine.EQUIP_NAMES).length * GameEngine.EQUIP_NAMES.weapon.length * Q.length;
+    const n = Object.keys(got).length;
+    let html = `<div class="sec-title">装备图鉴<span class="extra">${n}/${total} · 每格 +1 道行</span></div><div class="hint" style="margin-bottom:8px">任何品质第一次拿到都算——白装也不白拿</div>`;
+    for (const [slot, names] of Object.entries(GameEngine.EQUIP_NAMES)) {
+      html += `<div class="muted small" style="margin:8px 0 4px">${SLOT_ICONS[slot]} ${GameEngine.EQUIP_SLOT_NAMES[slot]}</div><div class="eq-codex">` + names.map((nm, ri) => {
+        const dots = Q.map((q, qi) => `<i class="${got[nm + '|' + qi] ? 'on' : ''}" style="--qc:${q.color}" title="${q.label}"></i>`).join('');
+        const any = Q.some((q, qi) => got[nm + '|' + qi]);
+        return `<div class="eqc ${any ? '' : 'unknown'}"><div class="eqc-n">${any ? nm : '？？？'}</div><div class="muted" style="font-size:10px">${GameEngine.REALMS[ri].name}</div><div class="eqc-dots">${dots}</div></div>`;
+      }).join('') + '</div>';
+    }
+    return html;
+  }
 
   // 图鉴勋章：铜 50 / 银 500 / 金 5000，每枚 +道行
   function medalHtml(m) {

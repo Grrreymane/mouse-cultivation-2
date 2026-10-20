@@ -99,8 +99,9 @@ const GameEngine = (() => {
     const late = getRealmIndex(L) === 5;
     const htk = opts.htk || (1.8 + (late ? 4.2 : 2.7) * pos);   // 需要几刀
     const htd = opts.htd || (38 - (late ? 28 : 26) * pos);      // 能扛几下
-    const hp = ref.atk * gearAtkMult(L) * htk;
-    const playerHp = ref.hp * gearHpMult(L);
+    // v4.1 加成改为分层相乘后，玩家整体更强：妖兽血量 ×1.5、按玩家生命 ×1.3 推算攻击
+    const hp = ref.atk * gearAtkMult(L) * htk * 1.5;
+    const playerHp = ref.hp * gearHpMult(L) * 1.3;
     const D = playerHp / htd;
     const d = ref.def * gearDefMult(L);
     let atk = (D + Math.sqrt(D * D + 4 * D * d)) / 2;
@@ -194,6 +195,7 @@ const GameEngine = (() => {
       else value = Math.round(rand(affix.range[0], affix.range[1]) * (1 + qualityIdx * 0.08));
       affixes.push({ id: affix.id, name: affix.name, stat: affix.stat, type: affix.type, value });
     }
+    if (state) { state.equipCodex = state.equipCodex || {}; state.equipCodex[name + '|' + qualityIdx] = 1; }  // 装备图鉴：拿到过就算
     return {
       id: Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 6),
       name, slot, qualityIdx, quality: quality.name, qualityColor: quality.color,
@@ -608,6 +610,7 @@ const GameEngine = (() => {
       slotEnhance: { weapon: 0, armor: 0, accessory: 0, boots: 0 },
       bossDefeated: {}, bossRetryAt: 0, bossBlessing: false,
       bossFirstKills: {}, goldenReadyAt: 0, pityKills: 0,
+      equipCodex: {},
       zone: 0, zoneMax: 0, autoPush: true, zoneStreak: 0, zonePushAt: 0, zoneKills: {},
       baseAttack: 5, baseDefense: 1, baseMaxHp: 100, hp: 100,
       baseCritRate: 5, baseCritDamage: 150,
@@ -727,6 +730,11 @@ const GameEngine = (() => {
       for (const it of all) if (it.slot in state.slotEnhance) state.slotEnhance[it.slot] = Math.max(state.slotEnhance[it.slot], Math.min(15, it.enhanceLevel || 0));
       for (const it of all) it.enhanceLevel = 0;
     }
+    // 装备图鉴：老存档用身上和背包里的装备点亮
+    if (!state.equipCodex || !Object.keys(state.equipCodex).length) {
+      state.equipCodex = {};
+      for (const it of [...Object.values(state.equipment || {}), ...(state.inventory || [])]) if (it && it.name) state.equipCodex[it.name + '|' + it.qualityIdx] = 1;
+    }
     // 功法等级上限校正
     for (const sk of SKILL_TREE) if ((state.skills[sk.id] || 0) > sk.maxLevel) state.skills[sk.id] = sk.maxLevel;
   }
@@ -795,8 +803,15 @@ const GameEngine = (() => {
   }
 
   // equipOverride: { slot: item|null } 用于装备对比
+  // 加成分层：同一层内相加，不同层之间相乘——每多一类养成，提升都看得见
+  const STAT_LAYERS = [
+    { id: 'gear', name: '装备词条' }, { id: 'skill', name: '功法' }, { id: 'beast', name: '灵兽' },
+    { id: 'dao', name: '道行' }, { id: 'misc', name: '成就·洞府' }, { id: 'asc', name: '飞升' },
+  ];
   function getComputedStats(equipOverride) {
-    const pct = { attack: 0, defense: 0, maxHp: 0 };
+    const L = {};
+    for (const l of STAT_LAYERS) L[l.id] = { attack: 0, defense: 0, maxHp: 0 };
+    let pct = L.gear;
     let attack = state.baseAttack, defense = state.baseDefense, maxHp = state.baseMaxHp;
     let critRate = state.baseCritRate, critDamage = state.baseCritDamage;
     let lifesteal = 0, dodge = 0, atkSpeed = 0, goldBonus = 0, expBonus = 0, skillDmg = 0;
@@ -834,6 +849,7 @@ const GameEngine = (() => {
     }
 
     // 功法
+    pct = L.skill;
     for (const sk of SKILL_TREE) {
       const lv = state.skills[sk.id] || 0;
       if (lv <= 0) continue;
@@ -844,6 +860,7 @@ const GameEngine = (() => {
     }
 
     // 灵兽
+    pct = L.beast;
     const beast = getActiveBeast();
     let beastSkill = null;
     if (beast) {
@@ -864,8 +881,9 @@ const GameEngine = (() => {
     // 成就
     // 道行
     const dao = getDaoxing().pct;
-    pct.attack += dao; pct.maxHp += dao;
+    L.dao.attack += dao; L.dao.maxHp += dao;
 
+    pct = L.misc;
     const ab = getAchievementBonuses(state);
     for (const [k, v] of Object.entries(ab)) {
       if (['attack', 'defense', 'maxHp'].includes(k)) pct[k] += v; else add(k, v, 'flat');
@@ -873,20 +891,23 @@ const GameEngine = (() => {
 
     // 转生
     const asc = state.ascensionBonuses || {};
-    pct.attack += (asc.atkMult || 0) * 10;
-    pct.defense += (asc.defMult || 0) * 10;
-    pct.maxHp += (asc.hpMult || 0) * 10;
+    L.asc.attack += (asc.atkMult || 0) * 10;
+    L.asc.defense += (asc.defMult || 0) * 10;
+    L.asc.maxHp += (asc.hpMult || 0) * 10;
     expBonus += (asc.expMult || 0) * 15;
     goldBonus += (asc.goldMult || 0) * 15;
 
     // 洞府
     expBonus += (state.cave.spirit_array || 0) * 5;
     const tg = (state.cave.training_ground || 0) * 3;
-    pct.attack += tg; pct.defense += tg; pct.maxHp += tg;
+    L.misc.attack += tg; L.misc.defense += tg; L.misc.maxHp += tg;
 
-    attack = attack * (1 + pct.attack / 100);
-    defense = defense * (1 + pct.defense / 100);
-    maxHp = maxHp * (1 + pct.maxHp / 100);
+    const layerMult = {};
+    for (const l of STAT_LAYERS) {
+      const v = L[l.id];
+      layerMult[l.id] = { attack: 1 + v.attack / 100, defense: 1 + v.defense / 100, maxHp: 1 + v.maxHp / 100 };
+      attack *= layerMult[l.id].attack; defense *= layerMult[l.id].defense; maxHp *= layerMult[l.id].maxHp;
+    }
 
     // 坐骑
     const realmIdx = getRealmIndex(state.level);
@@ -919,6 +940,7 @@ const GameEngine = (() => {
     }
 
     return {
+      layers: layerMult,
       attack: Math.floor(attack), defense: Math.floor(defense), maxHp: Math.floor(maxHp),
       critRate: Math.min(75, Math.round(critRate * 10) / 10),
       critDamage: Math.round(critDamage),
@@ -1037,7 +1059,7 @@ const GameEngine = (() => {
   // 收集带来的全局加成：图鉴勋章、灵兽、外观、守关妖王首杀、修行指引。飞升不丢。
   const MEDAL_KILLS = [50, 500, 5000];         // 铜 / 银 / 金
   const MEDAL_NAMES = ['铜', '银', '金'];
-  const DAO = { medal: 4, beast: 5, skin: 2, boss: 10, quest: 1, pctPerPoint: 0.15 };
+  const DAO = { medal: 4, beast: 5, skin: 2, boss: 10, quest: 1, equip: 1, pctPerPoint: 0.15 };
   function medalTier(kills) { let t = 0; for (const k of MEDAL_KILLS) if (kills >= k) t++; return t; }
   function getDaoxing() {
     let medals = 0;
@@ -1048,6 +1070,7 @@ const GameEngine = (() => {
       skin: (state.ownedSkins || []).length * DAO.skin,
       boss: Object.keys(state.bossFirstKills || {}).length * DAO.boss,
       quest: (state.questIndex || 0) * DAO.quest,
+      equip: Object.keys(state.equipCodex || {}).length * DAO.equip,
     };
     const total = Object.values(parts).reduce((a, b) => a + b, 0);
     return { total, parts, medals, pct: Math.round(total * DAO.pctPerPoint * 10) / 10 };
@@ -2068,6 +2091,7 @@ const GameEngine = (() => {
       activeBeastId: state.activeBeastId,
       monsterKills: { ...state.monsterKills },
       bossFirstKills: { ...(state.bossFirstKills || {}) },
+      equipCodex: { ...(state.equipCodex || {}) },
       deathCount: state.deathCount,
       towerBestFloor: state.towerBestFloor,
       totalGold: state.totalGold, totalExp: state.totalExp,
@@ -2700,7 +2724,7 @@ const GameEngine = (() => {
     claimFortune, FORTUNES, FORTUNE_LIFE, setAutoEquip, setAutoSellQuality, setAutoPill, AUTO_PILL_LEVEL, chooseTalent,
     // 洞府/成就/任务
     upgradeCaveBuilding, maxUpgradeCave, getCaveBuildingCost, CAVE_BUILDINGS, CAVE_EFFECT_NAMES,
-    ACHIEVEMENTS, describeReward, claimQuest, QUESTS, BOSS, setZone, toggleAutoPush, ZONE, ZONE_TIERS, zoneForLevel, DAO, MEDAL_KILLS, MEDAL_NAMES, medalTier, GOLDEN, PITY_KILLS,
+    ACHIEVEMENTS, describeReward, claimQuest, QUESTS, BOSS, STAT_LAYERS, EQUIP_NAMES, setZone, toggleAutoPush, ZONE, ZONE_TIERS, zoneForLevel, DAO, MEDAL_KILLS, MEDAL_NAMES, medalTier, GOLDEN, PITY_KILLS,
     // 常量
     REALMS, EQUIP_QUALITIES, EQUIP_SLOT_NAMES, MONSTER_TEMPLATES, TRAIT_INFO, STAT_NAMES, PERCENT_STATS,
     // 飞升
