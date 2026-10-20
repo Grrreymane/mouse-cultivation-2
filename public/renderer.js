@@ -493,6 +493,7 @@ const Renderer = (() => {
       shadow(mx, groundY + 1, Math.max(6, Math.floor(sz.w * 0.35)));
       const frame = Math.floor(animFrame / (monsterWalkIn < 1 ? 6 : 22)) % 2;
       if (m.isBoss) drawBossAura(m.name, mx, groundY, frame);
+      else if (m.isGolden) drawGoldenAura(m.name, mx, groundY, frame);
       else if (m.isElite) drawEliteAura(m.name, mx, groundY, frame);
       PixelArt.draw(wctx, m.name, mx, groundY, { frame, flash: monsterHit > 6 ? 0.85 : 0 });
       m._screenX = mx; m._top = groundY - sz.ay;
@@ -557,6 +558,18 @@ const Renderer = (() => {
     for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) wctx.drawImage(inner, x - sp.ax + dx, y - sp.ay + dy);
     wctx.restore();
     if (animFrame % 6 === 0) addParticlesWorld(x + (Math.random() - 0.5) * sp.w * 0.8, y - Math.random() * sp.ay, Math.random() < 0.5 ? '#FF5A3A' : '#8A2A6A', 1, 0.5);
+  }
+  // 金光妖兽：通体金色 + 金色光点
+  function drawGoldenAura(name, x, y, frame) {
+    const sp = PixelArt.getSprite(name);
+    if (!sp) return;
+    const img = sp.flashes[frame % sp.flashes.length];
+    wctx.save();
+    wctx.globalAlpha = 0.7 + Math.sin(animFrame * 0.1) * 0.2;
+    const gold = eliteTmp(img, '#FFE27A');
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [-2, 0], [2, 0]]) wctx.drawImage(gold, x - sp.ax + dx, y - sp.ay + dy);
+    wctx.restore();
+    if (animFrame % 5 === 0) addParticlesWorld(x + (Math.random() - 0.5) * sp.w * 0.8, y - Math.random() * sp.ay, Math.random() < 0.6 ? '#FFE27A' : '#FFFFFF', 1, 0.4);
   }
   function drawBossCrown(x, y) {
     const G = '#FFD24A', D = '#C9941E', R = '#FF3A4A';
@@ -868,11 +881,11 @@ const Renderer = (() => {
     // 名字
     ctx.font = 'bold 12px "PingFang SC","Microsoft YaHei",sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    const name = m.isBoss ? '👑 守关妖王·' + m.name : (m.isElite ? '★ ' : '') + m.name;
+    const name = m.isBoss ? '👑 守关妖王·' + m.name : m.isGolden ? `✨ 金光·${m.name}（剩${m.hp}下）` : (m.isElite ? '★ ' : '') + m.name;
     const traitIcon = m.trait && GameEngine.TRAIT_INFO[m.trait] ? GameEngine.TRAIT_INFO[m.trait].icon + ' ' : '';
     ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
     ctx.strokeText(traitIcon + name, s.x, y - 5);
-    ctx.fillStyle = m.isBoss ? '#FF9A5A' : m.isElite ? '#FFD86A' : '#F2EEE6';
+    ctx.fillStyle = m.isBoss ? '#FF9A5A' : m.isGolden ? '#FFE27A' : m.isElite ? '#FFD86A' : '#F2EEE6';
     ctx.fillText(traitIcon + name, s.x, y - 5);
     // 血条
     ctx.fillStyle = 'rgba(10,8,20,0.85)'; ctx.fillRect(x - 2, y - 2, bw + 4, bh + 4);
@@ -1026,6 +1039,7 @@ const Renderer = (() => {
       spawnCoins(x, groundY - 10, Math.min(8, 2 + (m.isElite ? 6 : 0)));
       const t = { x, y: groundY - 30 };
       addText(t.x, t.y - 10, '+' + GameEngine.formatNumber(d.goldGain), '#FFD86A', { size: 10, jitter: false, float: true, life: 50 });
+      if (m.isGolden) { addText(t.x, t.y - 30, '金光妖兽！', '#FFE27A', { pixel: false, size: 18, jitter: false, life: 80 }); spawnCoins(x, groundY - 10, 14); addParticlesWorld(x, groundY - 16, '#FFE27A', 24, 2); }
       if (m.isBoss) { addText(t.x, t.y - 30, '妖王伏诛！', '#FF9A5A', { pixel: false, size: 20, jitter: false, life: 90 }); flash = 0.5; flashColor = '#FFD8A0'; shake = 6; addParticlesWorld(x, groundY - 16, '#FFD24A', 30, 2.4); }
       else if (m.isElite) { addText(t.x, t.y - 26, '精英击杀！', '#FFD86A', { pixel: false, size: 15, jitter: false }); flash = 0.3; flashColor = '#FFE8A0'; }
       monsterWalkIn = 0;

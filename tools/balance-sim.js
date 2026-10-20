@@ -126,7 +126,7 @@ function run() {
   for (const [ri, t] of Object.entries(realmReached)) console.log(`  ${E.REALMS[ri].name}: ${fmtH(t)}`);
   console.log(`
 守关妖王: 出现${events.bossSpawn || 0}次 击败${events.bossKill || 0} 败退${events.bossLoss || 0} | ${global.__bossLog.join(' ')}`);
-  console.log(`\n最终: Lv.${s.level} ${s.realm} | 死亡${events.death} | 渡劫成功${events.trib} 失败${events.tribFail} | 灵兽${s.beasts.length} | 塔${s.towerBestFloor}层 | 转生${s.ascensionCount}`);
+  console.log(`\n最终: Lv.${s.level} ${s.realm} | 死亡${events.death} | 渡劫成功${events.trib} 失败${events.tribFail} | 灵兽${s.beasts.length} | 塔${s.towerBestFloor}层 | 转生${s.ascensionCount} | 道行${s.daoxing ? s.daoxing.total + "(+" + s.daoxing.pct + "%)" : "-"} | 金光妖兽${s.stats.goldenKills || 0}`);
 }
 
 // 一个"合理的"玩家：换装、卖垃圾、渡劫、按性价比花灵石、秘境/塔

@@ -348,6 +348,48 @@ exerciseAll('Lv60');
   if (S().currentMonster && S().currentMonster.isBoss) report('妖王', '大乘期出现了守关妖王');
 }
 
+// ---------- 金光妖兽 / 保底 / 道行 ----------
+{
+  const S = () => E.getState();
+  // 金光妖兽：固定次数击倒，与攻击力无关
+  cheat({ level: 30, killCount: 100, goldenReadyAt: 0, needTribulation: false, baseAttack: 1e15 });
+  let spawned = false;
+  for (let i = 0; i < 3000 && !spawned; i++) { cheat({ goldenReadyAt: 0 }); if (S().currentMonster && S().currentMonster.isGolden) spawned = true; }
+  if (!spawned) report('金光', '3000 次生成都没出现金光妖兽');
+  else {
+    const m = S().currentMonster;
+    if (m.hp !== m.maxHp || m.maxHp < 10) report('金光', `金光妖兽次数异常 ${m.hp}/${m.maxHp}`);
+    const tok0 = S().tianjiTokens, ess0 = S().materials.essence;
+    let hits = 0, killed = false;
+    for (let i = 0; i < 400 && !killed; i++) { sim.tick(1); const c = S().currentMonster; if (!c || !c.isGolden) killed = true; }
+    if (!killed) report('金光', '100 秒内没打倒金光妖兽');
+    if (S().tianjiTokens <= tok0 || S().materials.essence <= ess0) report('金光', '击败后没有天机令/精华');
+    if (S().goldenReadyAt <= Date.now()) {} // 冷却在生成时设置
+  }
+  // 冷却期间不再出现
+  cheat({ goldenReadyAt: Date.now() + 600000 });
+  for (let i = 0; i < 300; i++) { cheat({}); if (S().currentMonster && S().currentMonster.isGolden) { report('金光', '冷却期间又出现了金光妖兽'); break; } }
+
+  // 保底：pityKills 满时下一件必出极品
+  cheat({ level: 20, pityKills: E.PITY_KILLS - 1, inventory: [], autoEquip: false, autoSellQuality: -1, baseAttack: 1e12 });
+  let got = null;
+  for (let i = 0; i < 200 && !got; i++) { sim.tick(1); const inv = S().inventory; if (inv.length) got = inv[inv.length - 1]; }
+  if (!got) report('保底', '保底满后 50 秒内没有掉装备');
+  else if (got.qualityIdx < 4) report('保底', `保底掉落品质 ${got.qualityIdx}（应 ≥4 极品）`);
+  if (S().pityLeft !== E.PITY_KILLS && S().pityLeft < E.PITY_KILLS - 60) report('保底', `出极品后保底计数未重置（剩 ${S().pityLeft}）`);
+
+  // 道行：勋章、灵兽计入，提高攻击；飞升保留
+  cheat({ level: 30, monsterKills: {}, beasts: [], ownedSkins: [], bossFirstKills: {}, questIndex: 0 });
+  const d0 = S().daoxing.total, a0 = S().computed.attack;
+  cheat({ monsterKills: { '灰毛妖鼠': 600, '毒蟾蜍': 60 }, beasts: [{ id: 'x', templateId: 'fire_cat', level: 1 }], activeBeastId: null, bossFirstKills: { 0: true } });
+  const d1 = S().daoxing;
+  const expect = 3 * E.DAO.medal + E.DAO.beast + E.DAO.boss;
+  if (d1.total - d0 !== expect) report('道行', `道行 ${d0} → ${d1.total}（应 +${expect}）`);
+  if (!(S().computed.attack > a0)) report('道行', '道行增加但攻击没提升');
+  cheat({ level: 60 }); E.performAscension();
+  if (S().daoxing.parts.boss !== E.DAO.boss || S().daoxing.parts.medal < 3 * E.DAO.medal) report('道行', '飞升后道行（妖王首杀/勋章）丢失');
+}
+
 // ---------- 离线收益 ----------
 {
   cheat({ level: 20 });

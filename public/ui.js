@@ -469,6 +469,18 @@ const UI = (() => {
     return `<button class="btn sm ${ok ? 'jade' : ''}" data-action="refine" data-slot="${slot}" ${ok ? '' : 'disabled'} title="温养：提升到 Lv.${s.level}，品质和词条保留（${fmt(c.gold)} 灵石 · 矿石${c.ore}${c.essence ? ' · 精华' + c.essence : ''}）">温养→Lv.${s.level}<span class="cost">${fmt(c.gold)} ${mats}</span></button>`;
   }
 
+  function daoSection(s) {
+    const d = s.daoxing;
+    const p = d.parts;
+    const chip = (ico, n, v) => `<span class="dao-chip" title="${n}">${ico} ${n} <b>${v}</b></span>`;
+    return `<div class="sec"><div class="sec-title">道行<span class="extra">收集越多越强 · 飞升不丢</span></div>
+      <div class="card dao-card">
+        <div class="row"><span class="dao-num">${d.total}</span><span class="grow small">攻击、生命 <b class="t-jade">+${d.pct}%</b></span>
+          <button class="btn sm" data-action="guideGo" data-tab="codex" data-sel="#tabBody [data-action=codexSub][data-f=mon]">图鉴 ›</button></div>
+        <div class="dao-chips">${chip('🏅', '图鉴勋章', p.medal)}${chip('🐾', '灵兽', p.beast)}${chip('🎨', '外观', p.skin)}${chip('👑', '妖王首杀', p.boss)}${chip('📜', '修行指引', p.quest)}</div>
+      </div></div>`;
+  }
+
   function growthSection(s) {
     const tips = growthTips(s);
     const rows = tips.slice(0, 5).map(t => `<div class="card row grow-tip"><span class="gt-ico">${t.icon}</span><span class="grow small">${t.text}</span><button class="btn sm jade" data-action="guideGo" data-tab="${t.tab}" data-sel="${esc(t.sel)}">前往 ›</button></div>`).join('');
@@ -491,6 +503,7 @@ const UI = (() => {
           ${t ? `<div class="small t-gold" style="margin-top:4px">${t.icon} 前世天赋·${t.name}：<span class="muted">${t.desc}</span></div>` : ''}
         </div>
       </div>
+      ${daoSection(s)}
       ${growthSection(s)}
       <div class="sec"><div class="sec-title">属性</div>
         <div class="stat-grid">${statRows(c).filter(r => r[0]).map(([k, v, cls]) => `<div class="stat"><span>${k}</span><b class="${cls}">${v}</b></div>`).join('')}</div>
@@ -564,6 +577,7 @@ const UI = (() => {
       <div class="sec"><div class="sec-title">挂机设置</div>${autoCard}</div>
       <div class="sec"><div class="sec-title">已装备<span class="btns"><button class="btn sm gold" data-action="autoEquip">⚡一键换装</button></span></div>${slots}
         <div class="hint">强化属于<b>部位</b>，换上新装备不会丢失。每级 +8% 基础属性与固定词条，最高 +15；背包里的数值已按对应部位的强化计算。<br>装备等级落后时可<b>温养</b>到当前等级，品质和词条保留——喜欢的红装可以一直用下去</div></div>
+      <div class="hint" style="margin:-4px 0 10px">🎯 保底：再击杀 <b>${s.pityLeft}</b> 只妖兽必出极品装备</div>
       <div class="sec"><div class="sec-title">背包<span class="extra">${s.inventory.length}/${s.inventoryMax}</span><span class="btns"><button class="btn sm red" data-action="sellWeaker">出售弱装</button></span></div>
         ${inv || '<div class="hint">空空如也，打怪掉落装备吧</div>'}
       </div>`;
@@ -811,11 +825,21 @@ const UI = (() => {
           <div class="codex-item ${m.discovered ? '' : 'unknown'}" data-action="monsterInfo" data-name="${m.name}">
             <canvas class="mon-cv" data-name="${m.name}" ${m.discovered ? '' : 'data-sil="1"'} width="48" height="48"></canvas>
             <div class="cn">${m.discovered ? m.name : '???'}</div>
-            <div class="muted">${m.discovered ? `击杀 ${fmt(m.kills)}` : '未遭遇'}</div></div>`).join('') + '</div>';
+            <div class="muted">${m.discovered ? `击杀 ${fmt(m.kills)}` : '未遭遇'}</div>${medalHtml(m)}</div>`).join('') + '</div>';
       }
       return html;
     },
   };
+
+  // 图鉴勋章：铜 50 / 银 500 / 金 5000，每枚 +道行
+  function medalHtml(m) {
+    if (!m.discovered) return '';
+    const K = GameEngine.MEDAL_KILLS, t = GameEngine.medalTier(m.kills);
+    const icons = ['🥉', '🥈', '🥇'];
+    const got = icons.slice(0, t).join('');
+    const next = t < 3 ? `<span class="faint">${fmt(K[t])}</span>` : '';
+    return `<div class="medals">${got || '<span class="faint">勋章</span>'} ${next}</div>`;
+  }
 
   function talentChoiceHtml(list) {
     return `<div style="display:grid;gap:6px">${list.map(t => `

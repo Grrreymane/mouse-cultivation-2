@@ -607,6 +607,7 @@ const GameEngine = (() => {
       level: 1, exp: 0, gold: 0,
       slotEnhance: { weapon: 0, armor: 0, accessory: 0, boots: 0 },
       bossDefeated: {}, bossRetryAt: 0, bossBlessing: false,
+      bossFirstKills: {}, goldenReadyAt: 0, pityKills: 0,
       baseAttack: 5, baseDefense: 1, baseMaxHp: 100, hp: 100,
       baseCritRate: 5, baseCritDamage: 150,
       killCount: 0, totalGold: 0, totalExp: 0,
@@ -854,6 +855,10 @@ const GameEngine = (() => {
     }
 
     // 成就
+    // 道行
+    const dao = getDaoxing().pct;
+    pct.attack += dao; pct.maxHp += dao;
+
     const ab = getAchievementBonuses(state);
     for (const [k, v] of Object.entries(ab)) {
       if (['attack', 'defense', 'maxHp'].includes(k)) pct[k] += v; else add(k, v, 'flat');
@@ -943,6 +948,55 @@ const GameEngine = (() => {
   }
   function getRealm(level) { return REALMS[getRealmIndex(level)]; }
 
+  // ========== 道行（参考 Super Turtle Idle 的 Mastery）==========
+  // 收集带来的全局加成：图鉴勋章、灵兽、外观、守关妖王首杀、修行指引。飞升不丢。
+  const MEDAL_KILLS = [50, 500, 5000];         // 铜 / 银 / 金
+  const MEDAL_NAMES = ['铜', '银', '金'];
+  const DAO = { medal: 4, beast: 5, skin: 2, boss: 10, quest: 1, pctPerPoint: 0.15 };
+  function medalTier(kills) { let t = 0; for (const k of MEDAL_KILLS) if (kills >= k) t++; return t; }
+  function getDaoxing() {
+    let medals = 0;
+    for (const tier of MONSTER_TEMPLATES) for (const t of tier) medals += medalTier((state.monsterKills || {})[t.name] || 0);
+    const parts = {
+      medal: medals * DAO.medal,
+      beast: (state.beasts || []).length * DAO.beast,
+      skin: (state.ownedSkins || []).length * DAO.skin,
+      boss: Object.keys(state.bossFirstKills || {}).length * DAO.boss,
+      quest: (state.questIndex || 0) * DAO.quest,
+    };
+    const total = Object.values(parts).reduce((a, b) => a + b, 0);
+    return { total, parts, medals, pct: Math.round(total * DAO.pctPerPoint * 10) / 10 };
+  }
+
+  // ========== 金光妖兽（参考 gilded enemy）==========
+  // 偶尔出现，固定挨几下就倒（与战力无关），掉落约 60 只普通妖兽的灵石 + 材料 + 天机令 + 稀有以上装备
+  const GOLDEN = { chance: 0.025, cooldownMs: 10 * 60 * 1000, goldMult: 60, minKills: 20 };
+  function spawnGolden(level) {
+    const realmIdx = getRealmIndex(level);
+    const t = MONSTER_TEMPLATES[realmIdx][Math.floor(Math.random() * MONSTER_TEMPLATES[realmIdx].length)];
+    const base = monsterBase(level);
+    const hits = 10 + realmIdx * 2;
+    return {
+      name: t.name, tier: realmIdx, level, isGolden: true,
+      hp: hits, maxHp: hits, atk: Math.floor(base.atk * t.atk * 0.25),
+      exp: Math.floor(baseExpPerKill(level) * 10), gold: Math.floor(goldPerKill(level) * GOLDEN.goldMult),
+      trait: null, hpBars: 1, currentBar: 1, totalHp: hits, totalMaxHp: hits,
+    };
+  }
+  function onGoldenKilled(m) {
+    const herb = randInt(8, 15), ore = randInt(6, 12), essence = randInt(2, 4) + m.tier, tokens = randInt(2, 4);
+    state.materials.herb += herb; state.materials.ore += ore; state.materials.essence += essence;
+    state.tianjiTokens += tokens;
+    state.stats.goldenKills = (state.stats.goldenKills || 0) + 1;
+    const equip = generateEquipment(state.level, rollQuality(2));
+    addLog(`✨ 金光妖兽【${m.name}】被击败！灵药×${herb} 矿石×${ore} 精华×${essence} 天机令×${tokens}`);
+    handleNewEquip(equip, true);
+    emit('goldenKill', { monster: m, herb, ore, essence, tokens, equip });
+  }
+
+  // ========== 装备保底（参考 kill-count pity）==========
+  const PITY_KILLS = 400;   // 连续这么多只没出极品，下一件必出极品及以上
+
   // ========== 守关妖王 ==========
   // 境界瓶颈（修为圆满、待渡劫）时出现一次；击败得厚礼与渡劫加成，打不过也不卡进度
   // 难度随境界递增：炼气期的第一只妖王要让新手挂机也能打过
@@ -969,6 +1023,10 @@ const GameEngine = (() => {
 
   function spawnMonster(level) {
     if (bossAvailable()) return spawnBoss(level);
+    if (state.killCount >= GOLDEN.minKills && Date.now() >= (state.goldenReadyAt || 0) && Math.random() < GOLDEN.chance) {
+      state.goldenReadyAt = Date.now() + GOLDEN.cooldownMs;
+      return spawnGolden(level);
+    }
     const realmIdx = getRealmIndex(level);
     const monsters = MONSTER_TEMPLATES[realmIdx];
     const templateIdx = Math.floor(Math.random() * monsters.length);
@@ -999,6 +1057,7 @@ const GameEngine = (() => {
     state.currentMonster = spawnMonster(state.level);
     const m = state.currentMonster;
     if (m.isBoss) { addLog(`👑 守关妖王【${m.name}】拦住去路！击败它可获厚礼与渡劫加成`); emit('bossSpawn', { monster: m }); }
+    else if (m.isGolden) { addLog(`✨ 金光妖兽【${m.name}】现身！打 ${m.maxHp} 下就倒`); emit('goldenSpawn', { monster: m }); }
     else if (m.isElite) addLog(`⭐ 精英妖兽【${m.name}】出现了！`);
     emit('spawn', { monster: m });
   }
@@ -1026,6 +1085,7 @@ const GameEngine = (() => {
 
   function dealDamageToMonster(damage, stats) {
     const m = state.currentMonster;
+    if (m.isGolden) { m.hp = Math.max(0, m.hp - 1); m.totalHp = m.hp; return; }
     m.hp = Math.max(0, m.hp - damage);
     m.totalHp = Math.max(0, m.totalHp - damage);
     state.totalDamageDealt += damage;
@@ -1086,6 +1146,7 @@ const GameEngine = (() => {
       addLog(`💀 ⭐${m.name} 被击败！+${formatNumber(expGain)}修为 +${formatNumber(goldGain)}灵石`);
     }
     if (m.isBoss) onBossKilled(m);
+    if (m.isGolden) onGoldenKilled(m);
     emit('kill', { monster: m, expGain, goldGain });
     processDrops(m);
     tryEncounter();
@@ -1100,6 +1161,8 @@ const GameEngine = (() => {
     state.bossDefeated = state.bossDefeated || {};
     state.bossDefeated[ri] = true;
     state.bossBlessing = true;
+    state.bossFirstKills = state.bossFirstKills || {};
+    state.bossFirstKills[ri] = true;
     const tokens = 5 + ri * 3;
     state.tianjiTokens += tokens;
     const essence = 3 + ri * 3;
@@ -1418,8 +1481,12 @@ const GameEngine = (() => {
     const talent = getCurrentTalent();
     let dropRate = 0.045 + getRealmIndex(state.level) * 0.005 + ((talent && talent.effect.dropBonus) || 0) / 100;
     if (monster.isElite) dropRate += 0.4;
-    if (Math.random() < dropRate) {
-      const q = monster.isElite ? rollQuality(1) : rollQuality(0);
+    state.pityKills = (state.pityKills || 0) + 1;
+    const pity = state.pityKills >= PITY_KILLS;
+    if (pity || Math.random() < dropRate) {
+      let q = monster.isElite ? rollQuality(1) : rollQuality(0);
+      if (pity) { q = Math.max(4, q); addLog(`🎯 保底触发：必出极品装备`); }
+      if (q >= 4) state.pityKills = 0;
       const equip = generateEquipment(state.level, q);
       handleNewEquip(equip, true);
     }
@@ -1911,6 +1978,7 @@ const GameEngine = (() => {
       beasts: state.beasts.map(b => ({ ...b, level: Math.max(1, Math.floor(b.level / 2)) })),
       activeBeastId: state.activeBeastId,
       monsterKills: { ...state.monsterKills },
+      bossFirstKills: { ...(state.bossFirstKills || {}) },
       deathCount: state.deathCount,
       towerBestFloor: state.towerBestFloor,
       totalGold: state.totalGold, totalExp: state.totalExp,
@@ -2494,6 +2562,8 @@ const GameEngine = (() => {
       },
       activeBeast: getActiveBeast(),
       tribChance: state.needTribulation ? getTribulationChance() : null,
+      daoxing: getDaoxing(),
+      pityLeft: Math.max(0, PITY_KILLS - (state.pityKills || 0)),
       bossPending: state.needTribulation && getRealmIndex(state.level) < 5 && !(state.bossDefeated || {})[getRealmIndex(state.level)],
       bossRetryIn: Math.max(0, Math.ceil(((state.bossRetryAt || 0) - Date.now()) / 1000)),
       tribCooldown: Math.max(0, Math.ceil((state.tribulationCooldown - Date.now()) / 1000)),
@@ -2535,7 +2605,7 @@ const GameEngine = (() => {
     claimFortune, FORTUNES, FORTUNE_LIFE, setAutoEquip, setAutoSellQuality, setAutoPill, AUTO_PILL_LEVEL, chooseTalent,
     // 洞府/成就/任务
     upgradeCaveBuilding, maxUpgradeCave, getCaveBuildingCost, CAVE_BUILDINGS, CAVE_EFFECT_NAMES,
-    ACHIEVEMENTS, describeReward, claimQuest, QUESTS, BOSS,
+    ACHIEVEMENTS, describeReward, claimQuest, QUESTS, BOSS, DAO, MEDAL_KILLS, MEDAL_NAMES, medalTier, GOLDEN, PITY_KILLS,
     // 常量
     REALMS, EQUIP_QUALITIES, EQUIP_SLOT_NAMES, MONSTER_TEMPLATES, TRAIT_INFO, STAT_NAMES, PERCENT_STATS,
     // 飞升
