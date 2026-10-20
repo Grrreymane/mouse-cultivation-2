@@ -608,6 +608,7 @@ const GameEngine = (() => {
       slotEnhance: { weapon: 0, armor: 0, accessory: 0, boots: 0 },
       bossDefeated: {}, bossRetryAt: 0, bossBlessing: false,
       bossFirstKills: {}, goldenReadyAt: 0, pityKills: 0,
+      zone: 0, zoneMax: 0, autoPush: true, zoneStreak: 0, zonePushAt: 0, zoneKills: {},
       baseAttack: 5, baseDefense: 1, baseMaxHp: 100, hp: 100,
       baseCritRate: 5, baseCritDamage: 150,
       killCount: 0, totalGold: 0, totalExp: 0,
@@ -676,6 +677,7 @@ const GameEngine = (() => {
     const def = getDefaultState();
     const oldVersion = state.saveVersion || 0;
     const hadSlotEnhance = !!state.slotEnhance;
+    const hadZone = state.zone !== undefined;
     for (const key of Object.keys(def)) {
       if (state[key] === undefined) state[key] = def[key];
     }
@@ -713,6 +715,11 @@ const GameEngine = (() => {
       state.currentMonster = null;
       state.needTribulation = state.needTribulation || false;
       state.saveVersion = SAVE_VERSION;
+    }
+    if (!hadZone) {
+      // 老存档：放到与等级相符的地图；瓶颈期直接解锁到深处去打妖王
+      state.zone = state.zoneMax = state.needTribulation ? getRealmIndex(state.level) * 3 + 2 : zoneForLevel(state.level);
+      state.zoneKills = {};
     }
     if (!hadSlotEnhance) {
       state.slotEnhance = { weapon: 0, armor: 0, accessory: 0, boots: 0 };
@@ -948,6 +955,84 @@ const GameEngine = (() => {
   }
   function getRealm(level) { return REALMS[getRealmIndex(level)]; }
 
+  // ========== 地图（参考 Super Turtle Idle：区域 × 难度档）==========
+  // 每个境界三档地图：外围 / 腹地 / 深处，各住一种妖兽。妖兽强度由地图决定、不跟随鼠鼠等级，
+  // 于是「打不动 → 练一练 → 碾压」的节奏自然出现；守关妖王住在深处，打赢才能渡劫。
+  const ZONE_TIERS = ['外围', '腹地', '深处'];
+  const ZONE = { unlockKills: 15, pushStreak: 10, retreatMs: 90000, expMult: 0.72 };
+  const ZONE_COUNT = 18;
+  function zoneRealm(z) { return Math.floor(z / 3); }
+  function zoneTier(z) { return z % 3; }
+  function zoneLevel(z) {
+    const r = zoneRealm(z), t = zoneTier(z), R = REALMS[r];
+    if (r === 5) return t === 0 ? 50 : t === 1 ? 56 : Math.max(62, state ? state.level : 62); // 大乘深处随等级无尽
+    return R.minLevel + Math.round([0, 0.5, 1][t] * (R.maxLevel - R.minLevel));
+  }
+  function zoneName(z) { return `${REALMS[zoneRealm(z)].scene}·${ZONE_TIERS[zoneTier(z)]}`; }
+  function zoneMonsterTemplate(z) { return MONSTER_TEMPLATES[zoneRealm(z)][zoneTier(z)]; }
+  function curZone() { return Math.max(0, Math.min(ZONE_COUNT - 1, state.zone || 0)); }
+  function curZoneLevel() { return zoneLevel(curZone()); }
+  // 与等级相符的地图（老存档迁移、作弊、飞升起点用）
+  function zoneForLevel(L) {
+    const r = getRealmIndex(L);
+    let t = 0;
+    for (let i = 0; i < 3; i++) if (zoneLevel(r * 3 + i) <= L) t = i;
+    return r * 3 + t;
+  }
+  function setZone(z) {
+    z = Math.floor(z);
+    if (!(z >= 0 && z <= state.zoneMax)) return { success: false, msg: '尚未解锁' };
+    if (zoneRealm(z) > getRealmIndex(state.level)) return { success: false, msg: '境界不足' };
+    if (z === state.zone) return { success: true, msg: zoneName(z) };
+    state.zone = z;
+    state.zoneStreak = 0;
+    if (state.currentMonster && !state.currentMonster.isBoss) state.currentMonster = null;
+    if (!state.isDead) spawnNext();
+    addLog(`🗺️ 前往【${zoneName(z)}】`);
+    saveState();
+    return { success: true, msg: `前往【${zoneName(z)}】` };
+  }
+  function toggleAutoPush() { state.autoPush = !state.autoPush; saveState(); return state.autoPush; }
+  // 击杀后：计数、解锁下一档、自动前进
+  function onZoneKill(m) {
+    if (m.isBoss || m.isGolden) return;
+    const z = curZone();
+    state.zoneKills[z] = (state.zoneKills[z] || 0) + 1;
+    state.zoneStreak = (state.zoneStreak || 0) + 1;
+    if (z === state.zoneMax && zoneTier(z) < 2 && state.zoneKills[z] >= ZONE.unlockKills) {
+      state.zoneMax = z + 1;
+      addLog(`🔓 解锁新地图【${zoneName(z + 1)}】`);
+      emit('zoneUnlock', { zone: z + 1, name: zoneName(z + 1) });
+    }
+    const top = Math.min(state.zoneMax, getRealmIndex(state.level) * 3 + 2);
+    if (state.autoPush && z < top && state.zoneStreak >= ZONE.pushStreak && Date.now() >= (state.zonePushAt || 0)) {
+      state.zone = z + 1;
+      state.zoneStreak = 0;
+      addLog(`🗺️ 深入【${zoneName(z + 1)}】`);
+      emit('zoneMove', { zone: z + 1, name: zoneName(z + 1), up: true });
+    }
+  }
+  // 阵亡后：自动退回上一档（同一境界内），过一会儿再试
+  function onZoneDeath() {
+    state.zoneStreak = 0;
+    const z = curZone();
+    if (!state.autoPush || zoneTier(z) === 0) return;
+    state.zone = z - 1;
+    state.zonePushAt = Date.now() + ZONE.retreatMs;
+    addLog(`🗺️ 打不过，退回【${zoneName(z - 1)}】，稍后再闯`);
+    emit('zoneMove', { zone: z - 1, name: zoneName(z - 1), up: false });
+  }
+  function getZoneList() {
+    const ri = getRealmIndex(state.level);
+    const out = [];
+    for (let z = 0; z < ZONE_COUNT; z++) {
+      const t = zoneMonsterTemplate(z);
+      out.push({ z, name: zoneName(z), realm: zoneRealm(z), tier: zoneTier(z), tierName: ZONE_TIERS[zoneTier(z)], level: zoneLevel(z),
+        monster: t.name, kills: state.zoneKills[z] || 0, unlocked: z <= state.zoneMax && zoneRealm(z) <= ri, current: z === curZone() });
+    }
+    return out;
+  }
+
   // ========== 道行（参考 Super Turtle Idle 的 Mastery）==========
   // 收集带来的全局加成：图鉴勋章、灵兽、外观、守关妖王首杀、修行指引。飞升不丢。
   const MEDAL_KILLS = [50, 500, 5000];         // 铜 / 银 / 金
@@ -972,8 +1057,8 @@ const GameEngine = (() => {
   // 偶尔出现，固定挨几下就倒（与战力无关），掉落约 60 只普通妖兽的灵石 + 材料 + 天机令 + 稀有以上装备
   const GOLDEN = { chance: 0.025, cooldownMs: 10 * 60 * 1000, goldMult: 60, minKills: 20 };
   function spawnGolden(level) {
-    const realmIdx = getRealmIndex(level);
-    const t = MONSTER_TEMPLATES[realmIdx][Math.floor(Math.random() * MONSTER_TEMPLATES[realmIdx].length)];
+    const realmIdx = zoneRealm(curZone());
+    const t = zoneMonsterTemplate(curZone());
     const base = monsterBase(level);
     const hits = 10 + realmIdx * 2;
     return {
@@ -988,7 +1073,7 @@ const GameEngine = (() => {
     state.materials.herb += herb; state.materials.ore += ore; state.materials.essence += essence;
     state.tianjiTokens += tokens;
     state.stats.goldenKills = (state.stats.goldenKills || 0) + 1;
-    const equip = generateEquipment(state.level, rollQuality(2));
+    const equip = generateEquipment(curZoneLevel(), rollQuality(2));
     addLog(`✨ 金光妖兽【${m.name}】被击败！灵药×${herb} 矿石×${ore} 精华×${essence} 天机令×${tokens}`);
     handleNewEquip(equip, true);
     emit('goldenKill', { monster: m, herb, ore, essence, tokens, equip });
@@ -1003,7 +1088,7 @@ const GameEngine = (() => {
   const BOSS = { hpMult: [1.6, 2.0, 2.2, 2.2, 2.4], atkMult: [0.95, 1.1, 1.2, 1.25, 1.3], retryMs: 90000, tribBonus: 0.2 };
   function bossAvailable() {
     const ri = getRealmIndex(state.level);
-    return state.needTribulation && ri < 5 && !(state.bossDefeated || {})[ri] && Date.now() >= (state.bossRetryAt || 0);
+    return state.needTribulation && ri < 5 && curZone() === ri * 3 + 2 && !(state.bossDefeated || {})[ri] && Date.now() >= (state.bossRetryAt || 0);
   }
   function spawnBoss(level) {
     const realmIdx = getRealmIndex(level);
@@ -1021,16 +1106,16 @@ const GameEngine = (() => {
     };
   }
 
-  function spawnMonster(level) {
+  function spawnMonster() {
+    const z = curZone();
+    const level = zoneLevel(z);
     if (bossAvailable()) return spawnBoss(level);
     if (state.killCount >= GOLDEN.minKills && Date.now() >= (state.goldenReadyAt || 0) && Math.random() < GOLDEN.chance) {
       state.goldenReadyAt = Date.now() + GOLDEN.cooldownMs;
       return spawnGolden(level);
     }
-    const realmIdx = getRealmIndex(level);
-    const monsters = MONSTER_TEMPLATES[realmIdx];
-    const templateIdx = Math.floor(Math.random() * monsters.length);
-    const t = monsters[templateIdx];
+    const realmIdx = zoneRealm(z);
+    const t = zoneMonsterTemplate(z);
     const base = monsterBase(level);
 
     let isElite = false;
@@ -1045,7 +1130,7 @@ const GameEngine = (() => {
       name: t.name, tier: realmIdx, level,
       hp: barHp, maxHp: barHp,
       atk: Math.floor(base.atk * t.atk * (isElite ? 1.4 : 1)),
-      exp: Math.max(1, Math.floor(expBase * (isElite ? 1.2 * hpBars : 1))),
+      exp: Math.max(1, Math.floor(expBase * ZONE.expMult * (isElite ? 1.2 * hpBars : 1))),
       gold: Math.max(1, Math.floor(goldBase * (isElite ? 1.5 * hpBars : 1))),
       trait: t.trait, isElite, hpBars, currentBar: hpBars,
       totalHp: barHp * hpBars, totalMaxHp: barHp * hpBars,
@@ -1147,6 +1232,7 @@ const GameEngine = (() => {
     }
     if (m.isBoss) onBossKilled(m);
     if (m.isGolden) onGoldenKilled(m);
+    onZoneKill(m);
     emit('kill', { monster: m, expGain, goldGain });
     processDrops(m);
     tryEncounter();
@@ -1400,6 +1486,7 @@ const GameEngine = (() => {
   // ========== 死亡/复活 ==========
   function handlePlayerDeath() {
     state.isDead = true;
+    onZoneDeath();
     if (state.currentMonster && state.currentMonster.isBoss) {
       state.bossRetryAt = Date.now() + BOSS.retryMs;
       addLog(`👑 守关妖王【${state.currentMonster.name}】暂时退去，${BOSS.retryMs / 1000}秒后再来`);
@@ -1487,7 +1574,7 @@ const GameEngine = (() => {
       let q = monster.isElite ? rollQuality(1) : rollQuality(0);
       if (pity) { q = Math.max(4, q); addLog(`🎯 保底触发：必出极品装备`); }
       if (q >= 4) state.pityKills = 0;
-      const equip = generateEquipment(state.level, q);
+      const equip = generateEquipment(curZoneLevel(), q);
       handleNewEquip(equip, true);
     }
   }
@@ -1679,6 +1766,7 @@ const GameEngine = (() => {
   function attemptTribulation() {
     if (!state.needTribulation) return { success: false, msg: '当前无需渡劫' };
     if (state.isDead) return { success: false, msg: '鼠鼠阵亡中，无法渡劫' };
+    { const ri = getRealmIndex(state.level); if (ri < 5 && !(state.bossDefeated || {})[ri]) return { success: false, needBoss: true, msg: '需先击败本境界深处的守关妖王' }; }
     if (state.tribulationCooldown > Date.now()) {
       return { success: false, cooldown: true, msg: `天劫余威未散（${Math.ceil((state.tribulationCooldown - Date.now()) / 1000)}秒）` };
     }
@@ -1699,6 +1787,7 @@ const GameEngine = (() => {
       state.currentMonster = null;
       const realm = getRealm(state.level);
       addLog(`🌟 渡劫成功！鼠鼠晋升【${realm.name}】！`);
+      { const nz = getRealmIndex(state.level) * 3; state.zoneMax = Math.max(state.zoneMax || 0, nz); state.zone = nz; state.zoneStreak = 0; state.zonePushAt = 0; }
       emit('breakthrough', { realm: realm.name, level: state.level });
       const unlocked = ACTIVE_SKILLS.find(s => s.unlockLevel === state.level);
       if (unlocked) emit('skillUnlock', { skill: unlocked });
@@ -2001,8 +2090,10 @@ const GameEngine = (() => {
     fresh.baseAttack = ref.atk; fresh.baseDefense = ref.def; fresh.baseMaxHp = ref.hp;
     if (startLevel >= 10) { fresh.baseCritRate += 3; fresh.baseCritDamage += 20; }
     fresh.gold = Math.floor(state.gold * 0.1);
+    fresh.zone = fresh.zoneMax = 0;
     state = fresh;
     Object.assign(state, preserved);
+    state.zone = state.zoneMax = zoneForLevel(state.level);
     state.hp = getComputedStats().maxHp;
     state.combatStartTime = Date.now();
     state.lastTickTime = Date.now();
@@ -2433,7 +2524,8 @@ const GameEngine = (() => {
 
     while (remaining > 0) {
       const stats = getComputedStats();
-      const base = monsterBase(state.level);
+      const ZL = curZoneLevel();
+      const base = monsterBase(ZL);
       const perHit = stats.attack * (1 + stats.critRate / 100 * (stats.critDamage / 100 - 1)) * (1 + stats.atkSpeed / 100);
       const beast = getActiveBeast();
       const beastDps = beast ? stats.attack * beastBonus(beast).dmgMult * 0.45 : 0;
@@ -2447,8 +2539,9 @@ const GameEngine = (() => {
         if (ticksToDie < ticksPerKill) efficiency = 0.1;           // 打不过：几乎无收益
         else if (ticksToDie < ticksPerKill * 4) efficiency = 0.6;  // 偶尔阵亡
       }
-      const expPerKill = baseExpPerKill(state.level) * (1 + stats.expBonus / 100);
-      const goldPerK = goldPerKill(state.level) * (1 + stats.goldBonus / 100);
+      const zt = zoneMonsterTemplate(curZone());
+      const expPerKill = baseExpPerKill(ZL) * zt.exp * ZONE.expMult * (1 + stats.expBonus / 100);
+      const goldPerK = goldPerKill(ZL) * zt.gold * (1 + stats.goldBonus / 100);
       const need = state.needTribulation || state.level >= MAX_LEVEL ? Infinity : Math.max(0, getExpToNextLevel(state.level) - state.exp);
       const killsForLevel = need === Infinity ? Infinity : Math.ceil(need / expPerKill);
       const killsPossible = Math.floor(remaining / ticksPerKill * efficiency);
@@ -2482,7 +2575,7 @@ const GameEngine = (() => {
     state.killCount += kills;
     let equipsGained = 0;
     for (let i = 0; i < Math.min(8, Math.floor(kills * 0.03)); i++) {
-      if (state.inventory.length < state.inventoryMax) { state.inventory.push(generateEquipment(state.level)); equipsGained++; }
+      if (state.inventory.length < state.inventoryMax) { state.inventory.push(generateEquipment(curZoneLevel())); equipsGained++; }
     }
     if (state.isDead) { state.isDead = false; state.hp = getComputedStats().maxHp; }
     state.lastTickTime = now;
@@ -2563,6 +2656,8 @@ const GameEngine = (() => {
       activeBeast: getActiveBeast(),
       tribChance: state.needTribulation ? getTribulationChance() : null,
       daoxing: getDaoxing(),
+      zoneInfo: { z: curZone(), name: zoneName(curZone()), level: curZoneLevel(), tier: zoneTier(curZone()), realm: zoneRealm(curZone()), max: state.zoneMax },
+      zoneList: getZoneList(),
       pityLeft: Math.max(0, PITY_KILLS - (state.pityKills || 0)),
       bossPending: state.needTribulation && getRealmIndex(state.level) < 5 && !(state.bossDefeated || {})[getRealmIndex(state.level)],
       bossRetryIn: Math.max(0, Math.ceil(((state.bossRetryAt || 0) - Date.now()) / 1000)),
@@ -2605,7 +2700,7 @@ const GameEngine = (() => {
     claimFortune, FORTUNES, FORTUNE_LIFE, setAutoEquip, setAutoSellQuality, setAutoPill, AUTO_PILL_LEVEL, chooseTalent,
     // 洞府/成就/任务
     upgradeCaveBuilding, maxUpgradeCave, getCaveBuildingCost, CAVE_BUILDINGS, CAVE_EFFECT_NAMES,
-    ACHIEVEMENTS, describeReward, claimQuest, QUESTS, BOSS, DAO, MEDAL_KILLS, MEDAL_NAMES, medalTier, GOLDEN, PITY_KILLS,
+    ACHIEVEMENTS, describeReward, claimQuest, QUESTS, BOSS, setZone, toggleAutoPush, ZONE, ZONE_TIERS, zoneForLevel, DAO, MEDAL_KILLS, MEDAL_NAMES, medalTier, GOLDEN, PITY_KILLS,
     // 常量
     REALMS, EQUIP_QUALITIES, EQUIP_SLOT_NAMES, MONSTER_TEMPLATES, TRAIT_INFO, STAT_NAMES, PERCENT_STATS,
     // 飞升
@@ -2621,6 +2716,11 @@ const GameEngine = (() => {
       // 测试用：直接修改存档字段，例如 GameEngine._debug.cheat({ level: 25 })
       cheat(patch) {
         if (patch.level) { const ref = refBase(patch.level); state.baseAttack = ref.atk; state.baseDefense = ref.def; state.baseMaxHp = ref.hp; }
+        if (patch.level && patch.zone === undefined) {
+          const nt = patch.needTribulation !== undefined ? patch.needTribulation : state.needTribulation;
+          const z = nt ? getRealmIndex(patch.level) * 3 + 2 : zoneForLevel(patch.level);
+          patch = { zone: z, zoneMax: Math.max(z, patch.zoneMax || 0), ...patch };
+        }
         Object.assign(state, { isDead: false }, patch); state.hp = getComputedStats().maxHp; state.currentMonster = null; spawnNext(); saveState();
       },
     },

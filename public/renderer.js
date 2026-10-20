@@ -313,7 +313,7 @@ const Renderer = (() => {
   // ========== 动态背景元素 ==========
   const driftClouds = [];
   function drawAmbient(gs) {
-    const ri = gs.realmIndex;
+    const ri = gs.zoneInfo ? gs.zoneInfo.realm : gs.realmIndex;
     const sc = SCENES[ri] || SCENES[0];
     // 漂浮云
     if (driftClouds.length === 0) for (let i = 0; i < 4; i++) driftClouds.push({ x: Math.random() * W, y: 6 + Math.random() * H * 0.3, w: 20 + Math.random() * 26, v: 0.03 + Math.random() * 0.05 });
@@ -404,7 +404,7 @@ const Renderer = (() => {
   }
 
   function drawWorld(gs) {
-    const ri = gs.realmIndex;
+    const ri = gs.zoneInfo ? gs.zoneInfo.realm : gs.realmIndex;  // 背景跟随所在地图（可回老地图）
     const key = `${ri}_${W}_${H}`;
     if (key !== bgKey) { bgCache = buildBackground(ri); bgKey = key; }
     wctx.imageSmoothingEnabled = false;

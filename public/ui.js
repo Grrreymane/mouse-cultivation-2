@@ -304,7 +304,7 @@ const UI = (() => {
     $('hudHpFill').style.width = hpPct + '%';
     $('hudHpFill').parentElement.classList.toggle('low', hpPct < 30);
     $('hudHpText').textContent = `${fmt(s.hp)} / ${fmt(c.maxHp)}`;
-    $('hudScene').textContent = `· ${s.realmScene} ·`;
+    updateZoneBar(s);
 
     // Buff
     const now = Date.now(), b = [];
@@ -337,14 +337,16 @@ const UI = (() => {
       $('tribNext').textContent = next.name;
       $('tribNext').style.color = next.color;
       $('tribChance').textContent = Math.round(s.tribChance * 100) + '%';
-      $('tribBtn').disabled = s.tribCooldown > 0;
-      $('tribBtn').firstChild.textContent = s.tribCooldown > 0 ? `余威 ${s.tribCooldown}s ` : '⚡ 渡劫 ';
+      const needBoss = s.bossPending;
+      $('tribBtn').disabled = s.tribCooldown > 0 || (needBoss && s.bossRetryIn > 0 && s.zoneInfo.tier === 2);
+      $('tribBtn').firstChild.textContent = needBoss ? (s.bossRetryIn > 0 ? `妖王 ${s.bossRetryIn}s ` : '👑 先打妖王 ') : s.tribCooldown > 0 ? `余威 ${s.tribCooldown}s ` : '⚡ 渡劫 ';
+      $('tribChance').style.display = needBoss ? 'none' : '';
       const tips = [];
       if (!(s.buffs.tribBoost && s.buffs.tribBoost.until > now)) tips.push((s.pills.trib_pill || 0) > 0 ? '💊 先服金元丹 +25%' : '💊 金元丹 +25%');
       if (!s.activeBeastId) tips.push('🐾 灵兽出战+5%');
       if (s.tribFailStreak > 0) tips.push(`道心+${s.tribFailStreak * 10}%`);
       if (s.bossBlessing) tips.unshift(`👑 妖王印记 +${Math.round(GameEngine.BOSS.tribBonus * 100)}%`);
-      else if (s.bossPending) tips.unshift(s.bossRetryIn > 0 ? `👑 妖王 ${s.bossRetryIn}s 后再来` : `👑 先击败守关妖王 +${Math.round(GameEngine.BOSS.tribBonus * 100)}%`);
+      else if (s.bossPending) { tips.length = 0; tips.push(s.zoneInfo.tier === 2 ? '👑 守关妖王在深处等你' : '👑 去深处击败守关妖王才能渡劫'); }
       $('tribTip').textContent = tips.join(' · ') || '准备就绪，放手一搏！';
     }
 
@@ -354,6 +356,23 @@ const UI = (() => {
       $('reviveCountdown').textContent = s.reviveCountdown;
       $('deathTip').textContent = s.deathCount >= 3 ? '打不过？去【功法】修炼、【装备】换装强化、开启自动服药，或服用丹药再战。' : '';
     }
+  }
+
+  // 地图条：◀ 地图名 ▶ + 自动前进
+  function updateZoneBar(s) {
+    const zi = s.zoneInfo, list = s.zoneList;
+    const unlocked = list.filter(z => z.unlocked);
+    const idx = unlocked.findIndex(z => z.z === zi.z);
+    const prev = unlocked[idx - 1], next = unlocked[idx + 1];
+    const nz = list[zi.z + 1];
+    let lockTip = '';
+    if (!next && nz && nz.realm === zi.realm) lockTip = `<span class="zl-lock" title="在本图击杀 ${GameEngine.ZONE.unlockKills} 只解锁下一档">🔒${Math.min(list[zi.z].kills, GameEngine.ZONE.unlockKills)}/${GameEngine.ZONE.unlockKills}</span>`;
+    const tierCls = ['t0', 't1', 't2'][zi.tier];
+    const html = `<button class="zb" data-action="zoneGo" data-z="${prev ? prev.z : ''}" ${prev ? '' : 'disabled'} title="${prev ? prev.name : ''}">◀</button>
+      <span class="zn ${tierCls}">${zi.name}<small>Lv.${zi.level}</small></span>${lockTip}
+      <button class="zb" data-action="zoneGo" data-z="${next ? next.z : ''}" ${next ? '' : 'disabled'} title="${next ? next.name : ''}">▶</button>
+      <button class="zauto ${s.autoPush ? 'on' : ''}" data-action="autoPush" title="打得过自动深入，阵亡自动退回">${s.autoPush ? '自动' : '手动'}</button>`;
+    setHTML($('hudZone'), html, 'zone');
   }
 
   function updateSkillBar(s) {

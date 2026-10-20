@@ -75,6 +75,7 @@ function run() {
       levelStart = sim.now; deathsAtLevel = events.death; mAgg = { n: 0, hp: 0, atk: 0 };
     }
     if (type === 'death') { events.death++; if (lastBoss) events.bossLoss = (events.bossLoss || 0) + 1; }
+    if (type === 'zoneMove') { if (data.up) events.zoneUp = (events.zoneUp || 0) + 1; else events.zoneDown = (events.zoneDown || 0) + 1; }
     if (type === 'bossSpawn') { events.bossSpawn = (events.bossSpawn || 0) + 1; bossTries[data.monster.tier] = (bossTries[data.monster.tier] || 0) + 1; }
     if (type === 'bossKill') { events.bossKill = (events.bossKill || 0) + 1; bossLog.push(`${data.monster.name}(第${bossTries[data.monster.tier]}次)`); }
     if (type === 'spawn') lastBoss = !!(data && data.monster && data.monster.isBoss);
@@ -126,7 +127,7 @@ function run() {
   for (const [ri, t] of Object.entries(realmReached)) console.log(`  ${E.REALMS[ri].name}: ${fmtH(t)}`);
   console.log(`
 守关妖王: 出现${events.bossSpawn || 0}次 击败${events.bossKill || 0} 败退${events.bossLoss || 0} | ${global.__bossLog.join(' ')}`);
-  console.log(`\n最终: Lv.${s.level} ${s.realm} | 死亡${events.death} | 渡劫成功${events.trib} 失败${events.tribFail} | 灵兽${s.beasts.length} | 塔${s.towerBestFloor}层 | 转生${s.ascensionCount} | 道行${s.daoxing ? s.daoxing.total + "(+" + s.daoxing.pct + "%)" : "-"} | 金光妖兽${s.stats.goldenKills || 0}`);
+  console.log(`\n最终: Lv.${s.level} ${s.realm} | 死亡${events.death} | 渡劫成功${events.trib} 失败${events.tribFail} | 灵兽${s.beasts.length} | 塔${s.towerBestFloor}层 | 转生${s.ascensionCount} | 道行${s.daoxing ? s.daoxing.total + "(+" + s.daoxing.pct + "%)" : "-"} | 金光妖兽${s.stats.goldenKills || 0} | 前进${events.zoneUp || 0} 退回${events.zoneDown || 0}`);
 }
 
 // 一个"合理的"玩家：换装、卖垃圾、渡劫、按性价比花灵石、秘境/塔

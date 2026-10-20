@@ -333,16 +333,17 @@ exerciseAll('Lv60');
   cheat({ level: 39, needTribulation: true, exp: 1e15, bossDefeated: {}, bossRetryAt: 0, bossBlessing: false });
   if (!S().currentMonster || !S().currentMonster.isBoss) report('妖王', '瓶颈期没有出现守关妖王');
   if (!S().bossPending) report('妖王', 'bossPending 为 false');
-  cheat({ baseAttack: 1, baseDefense: 0, baseMaxHp: 5 });
+  cheat({ baseAttack: 1, baseDefense: 0, baseMaxHp: 5, equipment: { weapon: null, armor: null, accessory: null, boots: null }, beasts: [], activeBeastId: null });
   let died = false;
   for (let i = 0; i < 400 && !died; i++) { sim.tick(1); if (S().isDead) died = true; }
   if (!died) report('妖王', '极弱属性打妖王未阵亡');
   else if (S().bossRetryIn <= 0) report('妖王', '被妖王击败后没有设置再战时间');
+  if (died && S().zoneInfo.tier !== 1) report('地图', `被妖王击败后没有自动退回腹地（当前 ${S().zoneInfo.name}）`);
   sim.advance(20000); sim.tick(2);
   if (S().currentMonster && S().currentMonster.isBoss) report('妖王', '妖王退去冷却期间又立刻出现');
   sim.advance(120000);
-  cheat({ ...strong });
-  if (!S().currentMonster || !S().currentMonster.isBoss) report('妖王', '冷却结束后妖王没有再次出现');
+  cheat({ ...strong, zone: 3 * 3 + 2 });
+  if (!S().currentMonster || !S().currentMonster.isBoss) report('妖王', '冷却结束后回到深处，妖王没有再次出现');
   // 3) 大乘期不出现
   cheat({ level: 60, needTribulation: false });
   if (S().currentMonster && S().currentMonster.isBoss) report('妖王', '大乘期出现了守关妖王');
@@ -388,6 +389,46 @@ exerciseAll('Lv60');
   if (!(S().computed.attack > a0)) report('道行', '道行增加但攻击没提升');
   cheat({ level: 60 }); E.performAscension();
   if (S().daoxing.parts.boss !== E.DAO.boss || S().daoxing.parts.medal < 3 * E.DAO.medal) report('道行', '飞升后道行（妖王首杀/勋章）丢失');
+}
+
+// ---------- 地图 ----------
+{
+  const S = () => E.getState();
+  const strong = { baseAttack: 1e12, baseDefense: 1e9, baseMaxHp: 1e14 };
+  // 解锁与自动前进
+  cheat({ level: 12, needTribulation: false, zone: 3, zoneMax: 3, zoneKills: {}, zoneStreak: 0, zonePushAt: 0, autoPush: true, ...strong });
+  if (S().zoneInfo.z !== 3 || S().zoneInfo.level !== 10) report('地图', `筑基外围等级 ${S().zoneInfo.level}（应 10）`);
+  for (let i = 0; i < 300 && S().zoneMax < 4; i++) sim.tick(1);
+  if (S().zoneMax < 4) report('地图', '击杀 15 只后没有解锁下一档');
+  for (let i = 0; i < 300 && S().zoneInfo.z < 4; i++) sim.tick(1);
+  if (S().zoneInfo.z !== 4) report('地图', '自动前进没有进入腹地');
+  if (S().currentMonster && !S().currentMonster.isGolden && S().currentMonster.level !== S().zoneInfo.level) report('地图', `妖兽等级 ${S().currentMonster.level} ≠ 地图等级 ${S().zoneInfo.level}`);
+  // 深处不能越过本境界；跨境界、未解锁不能进
+  if (E.setZone(9).success) report('地图', '可以进入更高境界的地图');
+  if (E.setZone(17).success) report('地图', '可以进入未解锁的地图');
+  if (!E.setZone(0).success) report('地图', '不能回到老地图');
+  if (S().zoneInfo.realm !== 0) report('地图', '回老地图后地图信息不对');
+  // 手动模式不自动前进
+  E.toggleAutoPush();
+  cheat({ zone: 0, zoneStreak: 0, ...strong });
+  for (let i = 0; i < 200; i++) sim.tick(1);
+  if (S().zoneInfo.z !== 0) report('地图', '手动模式下仍自动前进');
+  E.toggleAutoPush();
+  // 阵亡自动退回
+  cheat({ level: 15, zone: 4, zoneMax: 4, autoPush: true, zonePushAt: 0, baseAttack: 1, baseDefense: 0, baseMaxHp: 5, equipment: { weapon: null, armor: null, accessory: null, boots: null }, beasts: [], activeBeastId: null });
+  let died = false;
+  for (let i = 0; i < 400 && !died; i++) { sim.tick(1); if (S().isDead) died = true; }
+  if (died && S().zoneInfo.z !== 3) report('地图', `阵亡后没有退回（${S().zoneInfo.name}）`);
+  if (died && S().zoneInfo.tier === 0 && S().zoneInfo.z !== 3) report('地图', '外围阵亡后不应再退');
+  // 妖王未过不能渡劫
+  cheat({ level: 19, needTribulation: true, exp: 1e15, bossDefeated: {}, bossRetryAt: Date.now() + 1e6, tribulationCooldown: 0, ...strong });
+  const r = E.attemptTribulation();
+  if (r.success || !r.needBoss) report('地图', '没击败妖王也能渡劫');
+  // 老存档迁移：没有 zone 字段
+  const st = JSON.parse(Buffer.from(E.exportSave(), 'base64').toString('utf8'));
+  delete st.zone; delete st.zoneMax; st.level = 27; st.needTribulation = false;
+  E.importSave(Buffer.from(JSON.stringify(st), 'utf8').toString('base64'));
+  if (S().zoneInfo.realm !== 2 || S().zoneInfo.level > 27) report('地图', `老存档迁移地图不对：${S().zoneInfo.name} Lv${S().zoneInfo.level}`);
 }
 
 // ---------- 离线收益 ----------

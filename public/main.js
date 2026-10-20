@@ -44,8 +44,16 @@
       refresh();
     },
     claimQuest: () => { const r = GameEngine.claimQuest(); if (r.success) { Sound.play('quest'); UI.toast('📜 ' + r.msg, 'gold'); } refresh(); },
+    zoneGo: el => { if (el.dataset.z === '') return; const r = GameEngine.setZone(+el.dataset.z); if (!r.success) UI.toast(r.msg, 'red'); Sound.play('click'); refresh(); },
+    autoPush: () => { const on = GameEngine.toggleAutoPush(); UI.toast(on ? '🗺️ 自动前进：打得过就深入，打不过就退回' : '🗺️ 手动：停在当前地图', on ? 'green' : ''); refresh(); },
     tribulation: () => {
       const s = GameEngine.getState();
+      if (s.bossPending) {  // 妖王未过：带去深处
+        const deep = s.realmIndex * 3 + 2;
+        if (s.zoneInfo.z !== deep) { GameEngine.setZone(deep); UI.toast('👑 前往深处挑战守关妖王', 'gold'); }
+        refresh();
+        return;
+      }
       if (!s.needTribulation || Renderer.isTribulating()) return;
       if (s.tribCooldown > 0) { UI.toast('天劫余威未散，稍后再试', 'red'); return; }
       Renderer.playTribulation(() => {
@@ -279,6 +287,7 @@
       case 'encounter': UI.toast(`🎲 奇遇·${data.event.name}！${data.rewards.join('、')}`, 'gold'); Sound.play('rare'); break;
       case 'questReady': UI.toast(`📜 修行指引「${data.quest.title}」完成，领取奖励吧`, 'gold'); Sound.play('quest'); break;
       case 'tokenDrop': Sound.play('drop'); break;
+      case 'zoneUnlock': Sound.play('rare'); UI.toast(`🔓 新地图【${data.name}】`, 'gold'); break;
       case 'goldenSpawn': Sound.play('rare'); UI.toast(`✨ 金光妖兽【${data.monster.name}】现身！`, 'gold'); break;
       case 'goldenKill': Sound.play('drop'); UI.toast(`✨ 金光妖兽：灵药×${data.herb} 矿石×${data.ore} 精华×${data.essence} 天机令×${data.tokens} + <b style="color:${data.equip.qualityColor}">${data.equip.name}</b>`, 'gold'); break;
       case 'bossSpawn': Sound.play('rare'); UI.toast(`👑 守关妖王【${data.monster.name}】拦住去路！击败可得厚礼、渡劫成功率 +${Math.round(GameEngine.BOSS.tribBonus * 100)}%`, 'gold'); break;
